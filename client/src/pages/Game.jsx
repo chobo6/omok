@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { io } from 'socket.io-client'
 import Board from '../components/Board'
 import Chat from '../components/Chat'
 import PlayerInfo from '../components/PlayerInfo'
 import { getAIMove } from '../utils/aiEngine'
+import { getForbiddenCells } from '../utils/forbidden'
 import styles from './Game.module.css'
 
 const BOARD_SIZE = 15
@@ -37,6 +38,7 @@ export default function Game({ config, onLeave }) {
   const boardRef = useRef(board)
   const turnRef = useRef(currentTurn)
   const playersRef = useRef([])
+  const forbiddenCellsRef = useRef([])
 
   useEffect(() => { boardRef.current = board }, [board])
   useEffect(() => { turnRef.current = currentTurn }, [currentTurn])
@@ -209,9 +211,24 @@ export default function Game({ config, onLeave }) {
     if (isOnline) {
       const myTurn = myColor === 'black' ? 1 : 2
       if (currentTurn !== myTurn) return
+      // 서버가 금수 판정 후 game:over 처리
       socketRef.current?.emit('game:move', { row, col })
     } else {
       if (currentTurn !== 1) return  // AI 착수 중 클릭 방지
+
+      // ref로 항상 최신 forbiddenCells 참조 (클로저 stale 방지)
+      const forbiddenHit = forbiddenCellsRef.current.find(f => f.row === row && f.col === col)
+      if (forbiddenHit) {
+        const b = board.map(r => [...r])
+        b[row][col] = 1
+        setBoard(b)
+        setLastMove({ row, col, player: 1 })
+        clearInterval(timerRef.current)
+        setStatus('ended')
+        setGameOver({ winner: 2, reason: 'forbidden', forbiddenType: forbiddenHit.type, forbiddenMove: { row, col } })
+        return
+      }
+
       handleLocalMove(row, col)
     }
   }
@@ -258,13 +275,27 @@ export default function Game({ config, onLeave }) {
   // 보드 클릭 비활성화 조건
   const boardDisabled = status !== 'playing' || !!gameOver || (isOnline && !isMyTurn) || (!isOnline && currentTurn === 2)
 
+  // 흑 차례일 때만 금수 위치 계산 (시각화)
+  const forbiddenCells = useMemo(() => {
+    const isBlackTurn = isOnline ? currentTurn === 1 && myColor === 'black' : currentTurn === 1
+    if (status !== 'playing' || !isBlackTurn) return []
+    return getForbiddenCells(board.map(r => [...r]))
+  }, [board, currentTurn, status, isOnline, myColor])
+
+  // 항상 최신 금수 목록을 ref에 동기화
+  forbiddenCellsRef.current = forbiddenCells
+
   // 표시용 플레이어 정보 (AI 모드)
   const aiPlayers = [
     { id: '1', color: 'black', nickname: nickname || '나', timeLeft: timers[1] },
     { id: '2', color: 'white', nickname: 'AI', timeLeft: timers[2] },
   ]
 
-  const displayPlayers = isOnline ? players : aiPlayers
+  // 온라인 모드: timers state(매초 timer:tick으로 갱신)를 timeLeft에 합성
+  // players.timeLeft는 착수 시점의 값이라 실시간 반영이 안 됨
+  const displayPlayers = isOnline
+    ? players.map(p => ({ ...p, timeLeft: timers[p.color === 'black' ? 1 : 2] ?? p.timeLeft }))
+    : aiPlayers
 
   return (
     <div className={styles.container}>
@@ -301,6 +332,7 @@ export default function Game({ config, onLeave }) {
             lastMove={lastMove}
             disabled={boardDisabled}
             myColor={isOnline ? myColor : 'black'}
+            forbiddenCells={forbiddenCells}
           />
 
           <div className={styles.actions}>
@@ -325,7 +357,8 @@ export default function Game({ config, onLeave }) {
               {gameOver.reason === 'draw' ? '무승부!' :
                gameOver.reason === 'disconnect' ? '상대방이 나갔습니다' :
                gameOver.reason === 'timeout' ? '시간 초과!' :
-               gameOver.reason === 'surrender' ? '항복!' : '게임 종료!'}
+               gameOver.reason === 'surrender' ? '항복!' :
+               gameOver.reason === 'forbidden' ? `금수 (${gameOver.forbiddenType})` : '게임 종료!'}
             </div>
             <div className={styles.modalResult}>
               {gameOver.winner === 0 ? '비겼습니다' :

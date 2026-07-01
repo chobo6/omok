@@ -4,12 +4,13 @@ import styles from './Board.module.css'
 const BOARD_SIZE = 15
 const CELL_SIZE = 40
 
-export default function Board({ board, onMove, lastMove, disabled, myColor }) {
+// forbiddenCells: [{ row, col, type }]
+export default function Board({ board, onMove, lastMove, disabled, myColor, forbiddenCells = [] }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
     drawBoard()
-  }, [board, lastMove])
+  }, [board, lastMove, forbiddenCells])
 
   function drawBoard() {
     const canvas = canvasRef.current
@@ -70,6 +71,21 @@ export default function Board({ board, onMove, lastMove, disabled, myColor }) {
       const cx = padding + col * CELL_SIZE
       const cy = padding + row * CELL_SIZE
       ctx.strokeRect(cx - 6, cy - 6, 12, 12)
+    }
+
+    // 금수 위치 표시 (렌주 삼각형 기호)
+    for (const { row, col } of forbiddenCells) {
+      const cx = padding + col * CELL_SIZE
+      const cy = padding + row * CELL_SIZE
+      const s = CELL_SIZE * 0.28
+
+      ctx.fillStyle = 'rgba(220, 40, 40, 0.75)'
+      ctx.beginPath()
+      ctx.moveTo(cx, cy - s)
+      ctx.lineTo(cx + s * 0.87, cy + s * 0.5)
+      ctx.lineTo(cx - s * 0.87, cy + s * 0.5)
+      ctx.closePath()
+      ctx.fill()
     }
   }
 

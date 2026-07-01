@@ -3,6 +3,7 @@ const http = require('http')
 const { Server } = require('socket.io')
 const cors = require('cors')
 const { createBoard, checkWin, isBoardFull } = require('./gameLogic')
+const { checkForbidden } = require('./forbidden')
 
 const app = express()
 app.use(cors())
@@ -140,6 +141,26 @@ io.on('connection', (socket) => {
     const playerNumber = playerIndex + 1
     if (playerNumber !== room.currentTurn) return
     if (room.board[row][col] !== 0) return
+
+    // 흑(1) 금수 판정: 금수 자리에 두면 즉시 패배
+    if (playerNumber === 1) {
+      const forbidden = checkForbidden(room.board, row, col)
+      if (forbidden) {
+        room.board[row][col] = 1
+        room.lastMove = { row, col, player: 1 }
+        clearInterval(room.timerInterval)
+        room.status = 'ended'
+        emitRoomState(roomId)
+        io.to(roomId).emit('game:over', {
+          winner: 2,
+          winnerId: room.players[1],
+          reason: 'forbidden',
+          forbiddenType: forbidden,
+          forbiddenMove: { row, col },
+        })
+        return
+      }
+    }
 
     room.board[row][col] = playerNumber
     room.lastMove = { row, col, player: playerNumber }

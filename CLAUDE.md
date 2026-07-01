@@ -28,10 +28,12 @@ cd client && npm run dev
 |---|---|
 | `server/index.js` | Socket.io 이벤트 전체 처리, 방/타이머/채팅 관리 |
 | `server/gameLogic.js` | 보드 생성, 5목 판정 (순수 함수) |
+| `server/forbidden.js` | 렌주룰 금수 판정 CJS — 서버에서 사용 |
 | `client/src/pages/Game.jsx` | 게임 화면 핵심 로직 (온라인/AI 모드 통합) |
 | `client/src/pages/Lobby.jsx` | 방 생성/입장/AI 선택 화면 |
-| `client/src/components/Board.jsx` | Canvas 오목판 렌더링 |
+| `client/src/components/Board.jsx` | Canvas 오목판 렌더링, 금수 삼각형 표시 |
 | `client/src/utils/aiEngine.js` | Minimax + alpha-beta pruning AI |
+| `client/src/utils/forbidden.js` | 렌주룰 금수 판정 ESM — 클라이언트에서 사용 |
 
 ## 코딩 컨벤션
 
@@ -58,11 +60,13 @@ cd client && npm run dev
 ## 알려진 제약 / 주의사항
 
 - 서버 재시작 시 모든 방 초기화 (in-memory)
-- 금수 룰 미구현 (PRD 향후 과제 참고)
-- AI는 클라이언트에서 실행 (서버 AI 없음)
+- **금수 룰**: 렌주룰 적용. 흑의 33/44/장목 착수 시 즉시 패배. 거짓금수 허용 (depth≤2 재귀 체크)
+- 금수 판정 로직은 서버(`server/forbidden.js` CJS)와 클라이언트(`client/src/utils/forbidden.js` ESM) 양쪽에 동일 로직으로 존재. 수정 시 둘 다 반영해야 함
+- AI는 클라이언트에서 실행 (서버 AI 없음). AI(백)는 금수 제한 없음
 - `Game.jsx`에서 소켓 이벤트 핸들러는 stale closure 방지를 위해 `useRef` 패턴 사용
 
 ## 참고 문서
 
 - `docs/PRD.md` — 기능 요구사항 전체
 - `docs/TECHNICAL_SPEC.md` — 아키텍처, API 명세, AI 설명
+- `docs/TROUBLESHOOTING.md` — 금수 패배처리·타이머 등 주요 버그 해결 기록
