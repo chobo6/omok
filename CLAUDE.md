@@ -15,12 +15,11 @@
 ## 실행 방법
 
 ```bash
-# 서버 (터미널 1)
-cd server && npm run dev
-
-# 클라이언트 (터미널 2)
-cd client && npm run dev
+# 루트에서 한 번에 (concurrently로 서버+클라이언트 동시 실행)
+npm run dev
 ```
+
+터미널을 따로 띄우려면 `cd server && npm run dev` / `cd client && npm run dev`.
 
 ## 주요 파일
 
@@ -32,7 +31,8 @@ cd client && npm run dev
 | `client/src/pages/Game.jsx` | 게임 화면 핵심 로직 (온라인/AI 모드 통합) |
 | `client/src/pages/Lobby.jsx` | 방 생성/입장/AI 선택 화면 |
 | `client/src/components/Board.jsx` | Canvas 오목판 렌더링, 금수 삼각형 표시 |
-| `client/src/utils/aiEngine.js` | Minimax + alpha-beta pruning AI |
+| `client/src/utils/aiEngine.js` | Minimax + alpha-beta pruning + VCF 위협 탐색 AI |
+| `client/src/utils/aiWorker.js` | aiEngine을 Web Worker에서 실행 (메인 스레드 블로킹 방지) |
 | `client/src/utils/forbidden.js` | 렌주룰 금수 판정 ESM — 클라이언트에서 사용 |
 
 ## 코딩 컨벤션
@@ -63,6 +63,7 @@ cd client && npm run dev
 - **금수 룰**: 렌주룰 적용. 흑의 33/44/장목 착수 시 즉시 패배. 거짓금수 허용 (depth≤2 재귀 체크)
 - 금수 판정 로직은 서버(`server/forbidden.js` CJS)와 클라이언트(`client/src/utils/forbidden.js` ESM) 양쪽에 동일 로직으로 존재. 수정 시 둘 다 반영해야 함
 - AI는 클라이언트에서 실행 (서버 AI 없음). AI(백)는 금수 제한 없음
+- AI 연산(`getAIMove`)은 `Game.jsx`가 직접 호출하지 않고 `aiWorker.js`(Web Worker)에 위임됨. `postMessage`로 board 전달 → worker가 계산 → 결과만 반환
 - `Game.jsx`에서 소켓 이벤트 핸들러는 stale closure 방지를 위해 `useRef` 패턴 사용
 
 ## 참고 문서
