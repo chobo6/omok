@@ -1,0 +1,65 @@
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #16213e;
+  border: 2px solid #0f3460;
+  border-radius: 8px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  flex: 1;
+}
+
+.card.active {
+  border-color: #e2a84b;
+  box-shadow: 0 0 12px rgba(226, 168, 75, 0.3);
+}
+
+.stone {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.info {
+  flex: 1;
+}
+
+.name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timer {
+  font-size: 18px;
+  font-weight: 700;
+  color: #a0aec0;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer.low {
+  color: #fc8181;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.turnBadge {
+  font-size: 11px;
+  background: #e2a84b;
+  color: #1a1a2e;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}

@@ -1,0 +1,191 @@
+.container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.waitingBanner {
+  background: #0f3460;
+  border: 1px solid #e2a84b;
+  border-radius: 8px;
+  padding: 12px 20px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: #a0aec0;
+  font-size: 14px;
+  width: 100%;
+  max-width: 900px;
+}
+
+.roomCode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #eee;
+  font-size: 14px;
+}
+
+.roomCode strong {
+  color: #e2a84b;
+  font-size: 18px;
+  letter-spacing: 3px;
+  font-family: monospace;
+}
+
+.copyBtn {
+  background: #e2a84b;
+  color: #1a1a2e;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.copyBtn:hover {
+  background: #f0bc6a;
+}
+
+.layout {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  width: 100%;
+  max-width: 900px;
+}
+
+.leftPanel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.playerRow {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.rightPanel {
+  width: 240px;
+  flex-shrink: 0;
+  padding-top: 56px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.surrenderBtn {
+  background: #742a2a;
+  color: #fed7d7;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: 1px solid #9b2c2c;
+  transition: background 0.2s;
+}
+
+.surrenderBtn:hover {
+  background: #9b2c2c;
+}
+
+.leaveBtn {
+  background: #2d3748;
+  color: #a0aec0;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: 1px solid #4a5568;
+  transition: background 0.2s;
+}
+
+.leaveBtn:hover {
+  background: #4a5568;
+  color: #eee;
+}
+
+/* 게임 종료 모달 */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 16px;
+  padding: 40px;
+  text-align: center;
+  min-width: 300px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.modalTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: #e2a84b;
+  margin-bottom: 12px;
+}
+
+.modalResult {
+  font-size: 18px;
+  color: #e2e8f0;
+  margin-bottom: 24px;
+}
+
+.rematchInfo {
+  font-size: 13px;
+  color: #e2a84b;
+  margin-bottom: 16px;
+  padding: 8px;
+  background: rgba(226, 168, 75, 0.1);
+  border-radius: 6px;
+}
+
+.modalActions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.rematchBtn {
+  background: #e2a84b;
+  color: #1a1a2e;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 10px 24px;
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.rematchBtn:hover {
+  background: #f0bc6a;
+}
+
+@media (max-width: 700px) {
+  .layout {
+    flex-direction: column;
+    align-items: center;
+  }
+  .rightPanel {
+    width: 100%;
+    padding-top: 0;
+  }
+}

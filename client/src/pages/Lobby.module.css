@@ -1,0 +1,172 @@
+.container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  padding: 20px;
+}
+
+.card {
+  background: rgba(22, 33, 62, 0.95);
+  border: 1px solid #0f3460;
+  border-radius: 16px;
+  padding: 40px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.logo {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.stones {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.stoneB, .stoneW {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+.stoneB {
+  background: radial-gradient(circle at 35% 35%, #555, #000);
+  border: 1px solid #333;
+}
+
+.stoneW {
+  background: radial-gradient(circle at 35% 35%, #fff, #ccc);
+  border: 1px solid #aaa;
+}
+
+.title {
+  font-size: 36px;
+  font-weight: 700;
+  color: #e2a84b;
+  letter-spacing: 4px;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: #4a5568;
+}
+
+.nicknameRow {
+  margin-bottom: 24px;
+}
+
+.input {
+  width: 100%;
+  padding: 10px 14px;
+  background: #0f3460;
+  border: 1px solid #1a4a80;
+  border-radius: 8px;
+  color: #eee;
+  font-size: 15px;
+}
+
+.input::placeholder {
+  color: #4a5568;
+}
+
+.input:focus {
+  border-color: #e2a84b;
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btnPrimary {
+  background: #e2a84b;
+  color: #1a1a2e;
+}
+
+.btnPrimary:hover {
+  background: #f0bc6a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(226, 168, 75, 0.3);
+}
+
+.btnSecondary {
+  background: #0f3460;
+  color: #eee;
+  border: 1px solid #1a4a80;
+}
+
+.btnSecondary:hover {
+  background: #1a4a80;
+  transform: translateY(-1px);
+}
+
+.onlinePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.backBtn {
+  background: transparent;
+  color: #a0aec0;
+  font-size: 13px;
+  text-align: left;
+  padding: 4px 0;
+}
+
+.backBtn:hover {
+  color: #eee;
+}
+
+.divider {
+  text-align: center;
+  color: #4a5568;
+  font-size: 13px;
+  position: relative;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 42%;
+  height: 1px;
+  background: #0f3460;
+}
+.divider::before { left: 0; }
+.divider::after { right: 0; }
+
+.joinRow {
+  display: flex;
+  gap: 8px;
+}
+
+.joinRow .input {
+  flex: 1;
+  letter-spacing: 2px;
+  font-weight: 700;
+}
+
+.joinRow .btn {
+  width: auto;
+  padding: 10px 18px;
+  font-size: 14px;
+}
