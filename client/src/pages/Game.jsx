@@ -3,7 +3,6 @@ import { io } from 'socket.io-client'
 import Board from '../components/Board'
 import Chat from '../components/Chat'
 import PlayerInfo from '../components/PlayerInfo'
-import { getAIMove } from '../utils/aiEngine'
 import { getForbiddenCells } from '../utils/forbidden'
 import styles from './Game.module.css'
 
@@ -35,6 +34,7 @@ export default function Game({ config, onLeave }) {
   const timerRef = useRef(null)
 
   const socketRef = useRef(null)
+  const aiWorkerRef = useRef(null)
   const boardRef = useRef(board)
   const turnRef = useRef(currentTurn)
   const playersRef = useRef([])
@@ -143,17 +143,41 @@ export default function Game({ config, onLeave }) {
     return () => clearInterval(timerRef.current)
   }, [currentTurn, status, isOnline])
 
+  // AI 연산(Minimax/VCF)은 메인 스레드를 막지 않도록 Web Worker에서 실행
+  useEffect(() => {
+    if (isOnline) return
+
+    aiWorkerRef.current = new Worker(new URL('../utils/aiWorker.js', import.meta.url), { type: 'module' })
+    return () => aiWorkerRef.current?.terminate()
+  }, [isOnline])
+
   // ─── AI 착수 ────────────────────────────────────────────────────
   useEffect(() => {
     if (isOnline || status !== 'playing' || currentTurn !== 2) return
 
+    const worker = aiWorkerRef.current
+    if (!worker) return
+
+    let cancelled = false
+
     const timeout = setTimeout(() => {
       const b = boardRef.current.map(row => [...row])
-      const move = getAIMove(b, 2)
-      if (move) handleLocalMove(move.row, move.col, b)
+
+      const handleMessage = (e) => {
+        worker.removeEventListener('message', handleMessage)
+        if (cancelled) return
+        const move = e.data
+        if (move) handleLocalMove(move.row, move.col, b)
+      }
+
+      worker.addEventListener('message', handleMessage)
+      worker.postMessage({ board: b, aiPlayer: 2 })
     }, 300)
 
-    return () => clearTimeout(timeout)
+    return () => {
+      cancelled = true
+      clearTimeout(timeout)
+    }
   }, [currentTurn, status, isOnline])
 
   // ─── 돌 놓기 ────────────────────────────────────────────────────
