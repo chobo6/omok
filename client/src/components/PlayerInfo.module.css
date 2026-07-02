@@ -27,14 +27,28 @@
   flex: 1;
 }
 
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
 .name {
   font-size: 14px;
   font-weight: 600;
   color: #e2e8f0;
-  margin-bottom: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.rating {
+  font-size: 11px;
+  color: #e2a84b;
+  font-weight: 700;
+  background: rgba(226, 168, 75, 0.12);
+  border-radius: 4px;
+  padding: 1px 5px;
+  flex-shrink: 0;
 }
 
 .timer {

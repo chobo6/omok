@@ -11,56 +11,61 @@
   background: rgba(22, 33, 62, 0.95);
   border: 1px solid #0f3460;
   border-radius: 16px;
-  padding: 40px;
+  padding: 36px 40px;
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
-.logo {
-  text-align: center;
-  margin-bottom: 32px;
-}
+/* ── 로고 ── */
+.logo { text-align: center; margin-bottom: 24px; }
 
 .stones {
   display: flex;
   justify-content: center;
   gap: 6px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
-
 .stoneB, .stoneW {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
 }
+.stoneB { background: radial-gradient(circle at 35% 35%, #555, #000); border: 1px solid #333; }
+.stoneW { background: radial-gradient(circle at 35% 35%, #fff, #ccc); border: 1px solid #aaa; }
 
-.stoneB {
-  background: radial-gradient(circle at 35% 35%, #555, #000);
-  border: 1px solid #333;
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 4px;
 }
-
-.stoneW {
-  background: radial-gradient(circle at 35% 35%, #fff, #ccc);
-  border: 1px solid #aaa;
-}
-
 .title {
-  font-size: 36px;
+  font-size: 34px;
   font-weight: 700;
   color: #e2a84b;
   letter-spacing: 4px;
-  margin-bottom: 4px;
 }
+.rankBtn {
+  font-size: 12px;
+  color: #a0aec0;
+  background: #0f3460;
+  border: 1px solid #1a4a80;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.rankBtn:hover { color: #e2a84b; border-color: #e2a84b; }
 
-.subtitle {
-  font-size: 13px;
-  color: #4a5568;
-}
+.subtitle { font-size: 12px; color: #4a5568; }
 
-.nicknameRow {
-  margin-bottom: 24px;
-}
+/* ── 닉네임 ── */
+.nicknameRow { margin-bottom: 20px; }
 
 .input {
   width: 100%;
@@ -70,80 +75,84 @@
   border-radius: 8px;
   color: #eee;
   font-size: 15px;
+  box-sizing: border-box;
 }
+.input::placeholder { color: #4a5568; }
+.input:focus { border-color: #e2a84b; outline: none; }
 
-.input::placeholder {
-  color: #4a5568;
-}
-
-.input:focus {
-  border-color: #e2a84b;
-}
-
-.menu {
+/* ── 탭 ── */
+.tabs {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.btn {
-  width: 100%;
-  padding: 14px;
+  gap: 4px;
+  margin-bottom: 16px;
+  background: #0a1628;
   border-radius: 10px;
-  font-size: 16px;
+  padding: 4px;
+}
+.tab {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 13px;
   font-weight: 600;
+  color: #4a6080;
+  border-radius: 7px;
   transition: all 0.2s;
 }
-
-.btnPrimary {
-  background: #e2a84b;
-  color: #1a1a2e;
+.tab:hover { color: #a0aec0; }
+.tabActive {
+  background: #16213e;
+  color: #e2a84b;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
 }
 
-.btnPrimary:hover {
-  background: #f0bc6a;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(226, 168, 75, 0.3);
-}
-
-.btnSecondary {
-  background: #0f3460;
-  color: #eee;
-  border: 1px solid #1a4a80;
-}
-
-.btnSecondary:hover {
-  background: #1a4a80;
-  transform: translateY(-1px);
-}
-
-.onlinePanel {
+/* ── 패널 공통 ── */
+.panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
-.backBtn {
+/* ── 버튼 ── */
+.btn {
+  width: 100%;
+  padding: 13px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btnPrimary { background: #e2a84b; color: #1a1a2e; }
+.btnPrimary:hover { background: #f0bc6a; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(226,168,75,0.3); }
+
+.btnSecondary { background: #0f3460; color: #eee; border: 1px solid #1a4a80; }
+.btnSecondary:hover { background: #1a4a80; }
+
+.btnAI {
   background: transparent;
-  color: #a0aec0;
+  color: #4a6080;
+  border: 1px solid #1a4a80;
+  font-size: 14px;
+  padding: 10px;
+  margin-top: 4px;
+}
+.btnAI:hover { color: #a0aec0; border-color: #4a6080; }
+
+.btnSmall {
+  width: auto;
+  padding: 7px 14px;
   font-size: 13px;
-  text-align: left;
-  padding: 4px 0;
 }
 
-.backBtn:hover {
-  color: #eee;
-}
-
+/* ── 비공개방 ── */
 .divider {
   text-align: center;
   color: #4a5568;
-  font-size: 13px;
+  font-size: 12px;
   position: relative;
 }
-
-.divider::before,
-.divider::after {
+.divider::before, .divider::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -154,19 +163,72 @@
 .divider::before { left: 0; }
 .divider::after { right: 0; }
 
-.joinRow {
+.joinRow { display: flex; gap: 8px; }
+.joinRow .input { flex: 1; letter-spacing: 2px; font-weight: 700; }
+.joinRow .btn { width: auto; padding: 10px 16px; font-size: 14px; }
+
+/* ── 공개방 목록 ── */
+.roomList {
+  border: 1px solid #1a4a80;
+  border-radius: 8px;
+  overflow: hidden;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.emptyRooms {
+  padding: 24px;
+  text-align: center;
+  color: #4a5568;
+  font-size: 13px;
+}
+.roomItem {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #0f3460;
+  transition: background 0.15s;
 }
+.roomItem:last-child { border-bottom: none; }
+.roomItem:hover { background: rgba(15, 52, 96, 0.5); }
+.roomInfo { display: flex; align-items: center; gap: 10px; }
+.roomHost { font-size: 14px; font-weight: 600; color: #e2e8f0; }
+.roomCount { font-size: 12px; color: #4a5568; }
 
-.joinRow .input {
-  flex: 1;
-  letter-spacing: 2px;
-  font-weight: 700;
+/* ── 랭킹전 프로필 ── */
+.profileBox {
+  background: #0a1628;
+  border: 1px solid #1a4a80;
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
 }
+.ratingLabel { font-size: 11px; color: #4a5568; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.ratingValue { font-size: 36px; font-weight: 700; color: #e2a84b; font-variant-numeric: tabular-nums; }
+.recordRow { display: flex; justify-content: center; gap: 12px; margin-top: 6px; font-size: 13px; font-weight: 600; }
+.win  { color: #68d391; }
+.lose { color: #fc8181; }
+.draw { color: #a0aec0; }
 
-.joinRow .btn {
-  width: auto;
-  padding: 10px 18px;
-  font-size: 14px;
+/* ── 랭킹전 대기열 ── */
+.queueBox {
+  background: #0a1628;
+  border: 1px solid #1a4a80;
+  border-radius: 10px;
+  padding: 20px 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
+.queueSpinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #1a4a80;
+  border-top-color: #e2a84b;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.queueText { color: #a0aec0; font-size: 14px; margin: 0; }

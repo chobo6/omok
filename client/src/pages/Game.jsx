@@ -12,8 +12,8 @@ function createBoard() {
   return Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0))
 }
 
-export default function Game({ config, onLeave }) {
-  const { mode, nickname, action, roomCode } = config
+export default function Game({ config, userId, onLeave }) {
+  const { mode, nickname, action, roomCode, type: roomTypeConfig } = config
   const isOnline = mode === 'online'
 
   // 공통 상태
@@ -28,6 +28,8 @@ export default function Game({ config, onLeave }) {
   const [myColor, setMyColor] = useState(null)  // 'black' | 'white'
   const [copied, setCopied] = useState(false)
   const [rematchRequested, setRematchRequested] = useState(false)
+  const [roomType, setRoomType] = useState('private')
+  const [ratingDelta, setRatingDelta] = useState(null)  // { delta, newRating }
 
   // AI 모드 타이머
   const [timers, setTimers] = useState({ 1: 180, 2: 180 })
@@ -48,12 +50,14 @@ export default function Game({ config, onLeave }) {
   useEffect(() => {
     if (!isOnline) return
 
-    const socket = io('/', { path: '/socket.io' })
+    const socket = io('/', { path: '/socket.io', auth: { userId } })
     socketRef.current = socket
 
     socket.on('connect', () => {
       if (action === 'create') {
-        socket.emit('room:create', { nickname })
+        socket.emit('room:create', { nickname, type: roomTypeConfig || 'private' })
+      } else if (action === 'ranked_join') {
+        socket.emit('ranked:join', { roomId: roomCode })
       } else {
         socket.emit('room:join', { roomId: roomCode, nickname })
       }
@@ -90,6 +94,12 @@ export default function Game({ config, onLeave }) {
       const newTimers = {}
       state.players.forEach(p => { newTimers[p.color === 'black' ? 1 : 2] = p.timeLeft })
       setTimers(newTimers)
+
+      if (state.roomType) setRoomType(state.roomType)
+    })
+
+    socket.on('rating:update', ({ delta, newRating }) => {
+      setRatingDelta({ delta, newRating })
     })
 
     socket.on('timer:tick', ({ socketId, timeLeft }) => {
@@ -346,6 +356,7 @@ export default function Game({ config, onLeave }) {
                 player={p}
                 isMyTurn={currentTurn === (p.color === 'black' ? 1 : 2)}
                 timeLeft={p.timeLeft}
+                showRating={roomType === 'ranked'}
               />
             ))}
           </div>
@@ -390,11 +401,22 @@ export default function Game({ config, onLeave }) {
                  ? (gameOver.winnerId === socketRef.current?.id ? '승리했습니다! 🎉' : '패배했습니다')
                  : (gameOver.winner === 1 ? '승리했습니다! 🎉' : 'AI가 이겼습니다')}
             </div>
+            {ratingDelta && (
+              <div className={styles.ratingDelta}>
+                <span>레이팅</span>
+                <span className={ratingDelta.delta >= 0 ? styles.ratingUp : styles.ratingDown}>
+                  {ratingDelta.delta >= 0 ? '+' : ''}{ratingDelta.delta}
+                </span>
+                <span>→ {ratingDelta.newRating}</span>
+              </div>
+            )}
             {rematchRequested && <div className={styles.rematchInfo}>상대방이 재경기를 요청했습니다</div>}
             <div className={styles.modalActions}>
-              <button className={styles.rematchBtn} onClick={handleRematch}>
-                {isOnline ? '재경기 요청' : '다시하기'}
-              </button>
+              {roomType !== 'ranked' && (
+                <button className={styles.rematchBtn} onClick={handleRematch}>
+                  {isOnline ? '재경기 요청' : '다시하기'}
+                </button>
+              )}
               <button className={styles.leaveBtn} onClick={onLeave}>나가기</button>
             </div>
           </div>

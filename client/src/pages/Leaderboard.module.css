@@ -1,0 +1,88 @@
+.container {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  padding: 40px 20px;
+}
+
+.card {
+  background: rgba(22, 33, 62, 0.95);
+  border: 1px solid #0f3460;
+  border-radius: 16px;
+  padding: 32px;
+  width: 100%;
+  max-width: 580px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.backBtn {
+  background: transparent;
+  color: #a0aec0;
+  font-size: 13px;
+  padding: 4px 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.backBtn:hover { color: #eee; }
+.title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #e2a84b;
+  flex: 1;
+}
+.sub { font-size: 12px; color: #4a5568; }
+
+.empty {
+  text-align: center;
+  color: #4a5568;
+  font-size: 14px;
+  padding: 40px 0;
+  line-height: 1.8;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.table thead tr {
+  border-bottom: 1px solid #1a4a80;
+}
+.table th {
+  padding: 8px 12px;
+  color: #4a5568;
+  font-weight: 600;
+  font-size: 12px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.table th:not(:first-child) { text-align: right; }
+
+.table tbody tr {
+  border-bottom: 1px solid rgba(15, 52, 96, 0.5);
+  transition: background 0.15s;
+}
+.table tbody tr:hover { background: rgba(15, 52, 96, 0.4); }
+.table tbody tr:last-child { border-bottom: none; }
+.table tbody tr.top { background: rgba(226, 168, 75, 0.05); }
+
+.table td {
+  padding: 12px 12px;
+  color: #e2e8f0;
+  text-align: right;
+}
+.rank    { text-align: left; font-size: 16px; }
+.nickname { text-align: left; font-weight: 600; }
+.ratingCell { font-weight: 700; color: #e2a84b; font-variant-numeric: tabular-nums; }
+.winCell  { color: #68d391; }
+.lossCell { color: #fc8181; }
+.rateCell { color: #a0aec0; }

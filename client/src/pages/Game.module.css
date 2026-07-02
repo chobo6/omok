@@ -159,6 +159,18 @@
   border-radius: 6px;
 }
 
+.ratingDelta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 15px;
+  color: #a0aec0;
+  margin-bottom: 4px;
+}
+.ratingUp   { color: #68d391; font-weight: 700; }
+.ratingDown { color: #fc8181; font-weight: 700; }
+
 .modalActions {
   display: flex;
   gap: 10px;

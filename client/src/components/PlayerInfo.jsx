@@ -1,15 +1,26 @@
 import styles from './PlayerInfo.module.css'
 
-export default function PlayerInfo({ player, isMyTurn, timeLeft }) {
+export default function PlayerInfo({ player, isMyTurn, timeLeft, showRating }) {
   const minutes = Math.floor(timeLeft / 60)
   const seconds = String(timeLeft % 60).padStart(2, '0')
   const isLow = timeLeft <= 30
 
   return (
     <div className={`${styles.card} ${isMyTurn ? styles.active : ''}`}>
-      <div className={styles.stone} style={{ background: player.color === 'black' ? '#111' : '#fff', border: player.color === 'black' ? '2px solid #555' : '2px solid #ccc' }} />
+      <div
+        className={styles.stone}
+        style={{
+          background: player.color === 'black' ? '#111' : '#fff',
+          border: player.color === 'black' ? '2px solid #555' : '2px solid #ccc',
+        }}
+      />
       <div className={styles.info}>
-        <div className={styles.name}>{player.nickname}</div>
+        <div className={styles.nameRow}>
+          <div className={styles.name}>{player.nickname}</div>
+          {showRating && player.rating != null && (
+            <div className={styles.rating}>{player.rating}</div>
+          )}
+        </div>
         <div className={`${styles.timer} ${isLow ? styles.low : ''}`}>
           {minutes}:{seconds}
         </div>
