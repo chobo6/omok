@@ -14,7 +14,8 @@
 6. **거짓금수(四) 판정 누락 수정** (`36605d1`, 오늘) — 아래 "오늘 분석·수정 내역" 참고
 7. **런타임 데이터 gitignore 처리** (`11e315d`, 오늘) — `server/data/` 제외
 
-8. **AI 열린사 방어 실패 버그 수정** (오늘, 아직 미커밋) — 상대가 양끝 열린 4목(열린사)을 만들면 AI가 한쪽만 막고 지던 버그. `findCriticalDefenseCells`로 교체해 상대의 모든 즉시 승리 위협을 수집하도록 수정, 열린삼 단계에서 미리 한쪽을 막아 예방하는 효과도 확인. 실제 시나리오로 재현·검증 완료 (`docs/TROUBLESHOOTING.md` #5)
+8. **AI 열린사 방어 실패 버그 수정** (`35de8b0`, 오늘) — 상대가 양끝 열린 4목(열린사)을 만들면 AI가 한쪽만 막고 지던 버그. `findCriticalDefenseCells`로 교체해 상대의 모든 즉시 승리 위협을 수집하도록 수정, 열린삼 단계에서 미리 한쪽을 막아 예방하는 효과도 확인. 실제 시나리오로 재현·검증 완료 (`docs/TROUBLESHOOTING.md` #5)
+9. **AI 탐색 엔진 1단계 업그레이드** (오늘, 아직 미커밋) — 고정 depth-3 Minimax를 반복심화+Transposition Table 기반 negamax로 교체. 아래 "오늘 분석·수정 내역 (AI 엔진)" 참고
 
 > **참고**: 6·7번 커밋은 원래 "임시 푸시"라는 커밋 메시지로 `d2c039f` 하나에 뭉쳐 있던 것을, 내용을 분석해 의미 있는 커밋 2개로 재구성하고 `git commit --amend` + `force-push`로 origin/main 히스토리를 새로 썼습니다. 다른 곳에 이 저장소를 클론해둔 게 있다면 `git fetch && git reset --hard origin/main`으로 맞춰야 합니다 (구 커밋 해시 `d2c039f`는 더 이상 origin에 없음).
 
@@ -36,6 +37,30 @@
 
 ---
 
+## 오늘 분석·수정 내역 (AI 엔진 강화)
+
+사용자 요청으로 "단일 난이도, 최대한 전문가 수준"을 목표로 AI를 강화하기로 하고, 참고 삼아 두 오목 엔진 리포를 리서치했습니다.
+
+- **[Piskvork](https://github.com/plastovicka/Piskvork)**: 확인 결과 AI 엔진이 아니라 Gomocup 프로토콜 GUI/심판 툴이었음. 예제 봇은 랜덤 착수 수준. `source/pbrain/alfabeta.cpp`(~400줄)만 컴팩트한 알파베타+VCF 참고용으로 볼만했지만 Rapfi 대비 얻을 게 없어 실질적으로 기여한 내용 없음
+- **[Rapfi](https://github.com/dhbloo/rapfi)**: Gomocup 상위권 엔진. 신경망(NNUE)·MCTS는 학습된 가중치와 ML 런타임이 필요해 브라우저 JS로 이식 불가 — 제외. 대신 알파베타 계열의 **구조적 기법**(반복심화, Transposition Table, 매 노드 후보 재정렬, 조합 패턴 평가, VCF 상대방어 탐색 등)은 대부분 순수 JS로 이식 가능해서 우선순위별로 정리 후 단계적으로 적용하기로 함
+
+### 1단계 적용 완료 (`client/src/utils/aiEngine.js`)
+- 최대화/최소화를 따로 두던 `minimax`를 표준 `negamax`(관점별 부호 반전 하나로 통일) 구조로 교체
+- **반복심화(Iterative Deepening)**: 고정 depth-3 → 시간 예산(`TIME_BUDGET_MS=2000ms`) 안에서 depth 1→2→3…로 점점 깊게, 완료된 depth만 채택
+- **Transposition Table**: Zobrist 해싱(칸×플레이어별 난수 XOR 증분 계산) + `Map` 기반 캐시(이번 탐색 호출 동안만 유지)
+- **매 노드 후보 재정렬**: 기존엔 루트에서만 정렬하고 재귀 내부는 그대로 썼는데, 모든 노드에서 재정렬하도록 수정 (Rapfi 조사 중 발견한 기존 코드의 실제 비효율)
+
+### 검증
+- 실제 시나리오 재현 테스트: 회귀(P0 열린사/열린삼 방어), 적법성, 시간예산 준수(≤2500ms) 전부 통과
+- **깊이 실측**: 초반 국면 depth 5, 중반 혼잡 국면 depth 7까지 도달 (기존 고정 depth-3 대비 2배 이상) — TT 12,000~22,000개 엔트리 생성돼 실제로 재사용되는 것 확인
+- 평가함수 대칭성(`evaluate(board,1) === -evaluate(board,2)`) 검증 통과 — negamax 전환 시 흔한 부호 버그 없음 확인
+- `npx vite build` 정상 통과
+
+### 남은 단계 (아래 "AI 엔진" TODO 참고)
+2단계(VCF 상대방어 탐색, 조합 패턴 평가표), 3단계(Killer/History, PVS, 바운딩박스)는 아직 미착수 — 검증 부담을 줄이려고 단계별로 나눠서 진행 중
+
+---
+
 ## 앞으로 할 일
 
 우선순위는 `docs/PRD.md` 4절, `docs/TECHNICAL_SPEC.md` 5·9절과 동일한 판단 기준입니다.
@@ -49,11 +74,16 @@
 - [ ] AI 난이도 선택 (쉬움 depth-1 / 보통 depth-3 / 어려움 depth-5)
 - [ ] 모바일 최적화 (터치 이벤트, 반응형 보드)
 
-### AI 엔진 (`docs/TECHNICAL_SPEC.md` 5절 "성능 개선 방향" 상세)
-- [ ] Iterative Deepening + 시간 제한
-- [ ] Zobrist Hashing + Transposition Table
-- [ ] Killer Move / History Heuristic 후보 정렬
+### AI 엔진 (`docs/TECHNICAL_SPEC.md` 5절 "성능 개선 방향" 상세, Rapfi 리서치 기반)
+- [x] Iterative Deepening + 시간 제한 (오늘 완료)
+- [x] Zobrist Hashing + Transposition Table (오늘 완료)
+- [ ] VCF에 상대 방어 탐색(VCF-defend) 추가 — 2단계
+- [ ] 조합 패턴 평가표 (Rapfi `Pattern4` 개념) — 2단계
+- [ ] Killer Move / History Heuristic 후보 정렬 — 3단계
+- [ ] PVS(Principal Variation Search) — 3단계
+- [ ] 후보 영역 바운딩박스 증분 관리 — 3단계
 - [ ] VCT(사·삼 함께 고려하는 확장 위협 탐색)
+- [ ] 난이도별 depth/시간예산 조절 기능 (지금은 단일 최강 난이도만 존재)
 
 ### 검증 필요
 - [ ] 거짓금수 재귀 로직 변경(오늘 수정) 후 실제 대국 시나리오로 회귀 테스트 — 특히 3단계 이상 중첩되는 거짓삼/거짓사 케이스가 실전에서 드물어 자동화 테스트가 없음. 유닛 테스트 추가 검토

@@ -212,9 +212,20 @@ getAIMove(board, aiPlayer)
     │     그중 휴리스틱 점수가 가장 높은 자리를 막음
     ├─ 3. VCF(연속사 강제 승리) 탐색 → 강제 승리 수순이 있으면 그 첫 수 반환
     ├─ 4. 후보 수 생성 (기존 돌 주변 2칸 이내 빈 칸, 중복 제거)
-    ├─ 5. 후보를 scoreCell 휴리스틱으로 정렬 후 상위 20개만 선별
-    └─ 6. 각 후보에 대해 Minimax depth-3 + alpha-beta pruning 실행 → 최고 점수 수 반환
+    └─ 5. 반복심화(Iterative Deepening) + Transposition Table 탐색 (시간 예산 2초)
+          → 시간이 끝난 시점까지 완료된 depth 중 가장 깊은 결과를 채택
 ```
+
+### 탐색 엔진 (`negamax` + `rootSearch` + `iterativeDeepeningSearch`)
+
+기존 고정 depth-3 Minimax를 Rapfi([dhbloo/rapfi](https://github.com/dhbloo/rapfi)) 등 실제 강한 오목 엔진의 구조를 참고해 다음으로 교체:
+
+- **Negamax + Alpha-Beta**: 기존에 최대화/최소화 분기를 따로 두던 `minimax`를, 매 노드에서 "지금 둘 차례인 쪽" 관점으로 부호를 뒤집는 `negamax` 하나로 통일 (표준 엔진 구조와 동일)
+- **반복심화(Iterative Deepening)**: 고정 depth-3 대신 `TIME_BUDGET_MS`(기본 2000ms) 안에서 depth 1→2→3…로 점점 깊이 탐색. 시간이 끝난 depth의 부분 결과는 버리고 마지막으로 완료된 depth의 결과만 채택 — 국면 복잡도에 따라 자동으로 깊이가 달라짐 (실측: 초반 국면 depth 5, 중반 혼잡한 국면 depth 7까지 도달, 기존 고정 depth-3 대비 2배 이상)
+- **Transposition Table (Zobrist 해싱)**: `ZOBRIST[row][col][player]` 난수표로 보드 해시를 증분 계산(`XOR`)하고, 이번 `getAIMove` 호출 동안만 유지되는 `Map` 기반 캐시에 `{depth, value, bound, bestMove}` 저장. 동일/유사 국면 재탐색을 줄이고, depth가 깊어질 때 이전 depth에서 찾은 최선 수를 다음 depth의 탐색 순서 맨 앞에 배치해 알파베타 가지치기 효율을 높임
+- **매 노드 후보 재정렬**: 기존엔 루트에서 한 번만 후보를 정렬하고 재귀 내부(`minimax`)는 정렬 없이 그대로 썼는데, `orderCandidates`로 모든 노드에서 매번 `scoreCell` 기준 재정렬 + 상위 `MAX_CANDIDATES_PER_NODE`(20)개로 제한하도록 수정
+
+이번 업그레이드는 Rapfi/Piskvork 리서치 결과 중 JS(브라우저)로 이식 가능한 구조적 기법만 반영한 것 — Rapfi의 NNUE 신경망 평가·MCTS·멀티스레드 탐색 등은 학습된 가중치·네이티브 런타임이 필요해 제외 (자세한 리서치 내용은 `docs/todo.md` 참고).
 
 - **오프닝 다양화(`getOpeningMove`)**: 오목의 관례상 흑의 첫 수는 항상 정중앙이라, AI의 첫 응수가 매번 똑같으면 패턴이 뻔해짐. 상대 돌이 1개뿐인 국면에서는 그 돌 기준 상하좌우·대각선 1칸(3x3, 중심 제외) 중 무작위로 응수해 개국을 다양화
 - **Threat Search(`searchVCF`/`findFourMoves`/`getFourThreats`)**: VCF(Victory by Continuous Fours) 탐색. 사(四)를 만드는 수만 후보로 좁혀, 완성 지점이 2곳 이상(더블사·열린사)이면 즉시 승리 확정, 1곳뿐이면 상대가 그 자리를 막는다고 가정하고 재귀적으로 다음 사를 탐색. depth-3 Minimax가 놓치는 종반 강제 승리 수순을 찾아냄. 상대의 반격(더 빠른 승리) 가능성은 별도로 검증하지 않는 단순화된 탐색
@@ -240,21 +251,25 @@ getAIMove(board, aiPlayer)
 
 ### 알려진 한계
 
-- **고정 depth**: 게임 진행 단계(초반/중반/종반)와 무관하게 항상 depth-3만 탐색 (VCF가 종반 강제 승리 수순 일부를 보완하지만 전체를 대체하진 않음)
-- **탐색 결과 재사용 없음**: 매 착수마다 Minimax를 처음부터 다시 계산 (Transposition Table 없음)
 - **난이도 고정**: PRD에 계획된 "쉬움/보통/어려움" depth 선택 기능 미구현 (`docs/PRD.md` 4절 참고)
 - **VCF의 상대 반격 미검증**: `searchVCF`는 상대가 항상 사(四)의 완성 지점만 막는다고 가정할 뿐, 상대가 그 대신 더 빠르게 이길 수 있는지는 확인하지 않는 단순화된 탐색 (VCT처럼 공격·방어를 모두 고려하는 완전한 탐색은 아님)
+- **평가함수가 단순 점수 합산**: 셀 단위로 5·4·3·2목 점수를 더하는 방식이라, 여러 방향의 위협이 조합된 복합 포크(예: 사와 삼이 동시에 걸린 자리)를 정교하게 구분하지 못함 — Rapfi류 엔진의 조합 패턴 평가표에 비해 단순함
+- **Killer Move / History Heuristic 없음**: 형제 노드에서 컷오프를 일으켰던 수를 우선 시도하는 최적화 미적용
+- **PVS(Principal Variation Search) 없음**: 모든 노드를 풀윈도우로 탐색 (null-window 재탐색 최적화 없음)
 
-### 성능 개선 방향 (향후 과제, 우선순위 순)
+### 성능 개선 방향 (향후 과제, 우선순위 순 — Rapfi 리서치 기반 2·3단계)
 
-1. **반복 심화(Iterative Deepening) + 시간 제한** — 고정 depth-3 대신 남은 시간 예산 안에서 depth를 1→2→3…으로 점진적으로 늘려 상황에 맞는 깊이 확보
-2. **Zobrist Hashing + Transposition Table** — 동일/유사 국면 재계산 방지로 탐색 속도 개선, 확보한 여유를 depth 증가에 재투자
+1. **VCF에 상대 방어 탐색(VCF-defend) 추가** — 위 "VCF의 상대 반격 미검증" 한계를 실제 탐색으로 해소 (Rapfi의 `vcfdefend`에 해당)
+2. **조합 패턴 평가표** — 방향별 패턴을 조합해 포크/복합위협을 더 정교하게 분류 (Rapfi의 `Pattern4` 개념)
 3. **Killer Move / History Heuristic 후보 정렬** — 이전 탐색에서 유효했던 수를 우선 시도해 alpha-beta 가지치기 효율 향상
-4. **VCT(사·삼을 함께 고려하는 확장 위협 탐색)** — 현재 VCF(사만 연속)보다 넓게, 열린 삼도 강제 수순에 포함시켜 종반 승률 추가 향상
-5. **난이도별 depth 조절 기능 구현** — PRD 4절의 "AI 난이도 선택" 요구사항 반영 (쉬움 depth-1 / 보통 depth-3 / 어려움 depth-5)
+4. **PVS(Principal Variation Search)** — null-window 탐색으로 좋은 move-ordering을 전제로 탐색량 절감
+5. **후보 영역을 바운딩박스로 증분 관리** — 매 노드 `getCandidates`의 전체 스캔 비용 절감
+6. **VCT(사·삼을 함께 고려하는 확장 위협 탐색)** — 현재 VCF(사만 연속)보다 넓게, 열린 삼도 강제 수순에 포함시켜 종반 승률 추가 향상
+7. **난이도별 depth/시간예산 조절 기능 구현** — PRD 4절의 "AI 난이도 선택" 요구사항 반영
 
 ### 완료된 개선 항목
 
+- ~~고정 depth-3 → 반복심화 + Transposition Table~~ — `negamax`/`rootSearch`/`iterativeDeepeningSearch`로 교체, 시간 예산(2초) 안에서 국면 복잡도에 따라 depth 5~7까지 자동으로 깊이 확보 (Rapfi 리서치 기반 1단계, 위 탐색 엔진 절 참고)
 - ~~열린사(오픈 포) 방어 실패 버그 수정~~ — 기존 즉시방어는 "상대가 이기는 자리"를 하나만 찾으면 바로 멈춰서, 열린사처럼 한 수로 못 막는 이중 위협은 절반만 막고 나머지를 방치해 패배로 이어졌음. `findCriticalDefenseCells`가 상대의 승리 자리(및 완성 지점 2곳 이상인 사)를 전부 모으도록 수정 — 열린삼 단계에서 미리 한쪽을 막아 애초에 열린사가 만들어지지 않도록 예방하는 효과도 있음 (`docs/TROUBLESHOOTING.md` #5 참고)
 - ~~끊긴 패턴(gap) 평가 보강~~ — `scoreCell`이 `countLine`(연속 카운트) 방식에서 `buildLine`+`analyzeDirection`(5칸 슬라이딩 윈도우) 방식으로 교체되어 `XX.XX`/`.XXX.` 같은 끊긴 삼·사 위협도 인식
 - ~~Web Worker로 이전~~ — `aiWorker.js` 추가, `Game.jsx`가 메인 스레드 대신 워커에 계산을 위임. 착수 연산 중에도 페이지가 멈추지 않고 채팅 등 다른 UI 조작이 가능해짐

@@ -248,53 +248,166 @@ function searchVCF(board, player, depth) {
   return null
 }
 
-function minimax(board, depth, alpha, beta, isMaximizing, aiPlayer) {
-  const humanPlayer = aiPlayer === 1 ? 2 : 1
-
-  if (depth === 0) {
-    let score = 0
-    for (let r = 0; r < BOARD_SIZE; r++) {
-      for (let c = 0; c < BOARD_SIZE; c++) {
-        if (board[r][c] === aiPlayer) score += scoreCell(board, r, c, aiPlayer)
-        else if (board[r][c] === humanPlayer) score -= scoreCell(board, r, c, humanPlayer)
-      }
+// ---- Zobrist 해싱 (Transposition Table 키 계산용) ----
+// board[r][c] 값(1 또는 2)별로 서로 다른 난수를 배정해두고, 착수/취소마다
+// 해당 칸의 난수를 XOR하면 매번 보드 전체를 스캔하지 않고도 해시를 증분 갱신할 수 있다.
+function createZobristTable() {
+  const table = []
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    const row = []
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      row.push([0, Math.floor(Math.random() * 0x7fffffff), Math.floor(Math.random() * 0x7fffffff)])
     }
-    return score
+    table.push(row)
+  }
+  return table
+}
+const ZOBRIST = createZobristTable()
+
+function computeHash(board) {
+  let hash = 0
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const v = board[r][c]
+      if (v !== 0) hash ^= ZOBRIST[r][c][v]
+    }
+  }
+  return hash
+}
+
+const WIN_SCORE = 1000000
+const TT_EXACT = 0
+const TT_LOWER = 1
+const TT_UPPER = 2
+const MAX_CANDIDATES_PER_NODE = 20
+const TIME_BUDGET_MS = 2000
+const MAX_SEARCH_DEPTH = 12
+
+// side(1|2) 관점 평가. 양수면 side에게 유리
+function evaluate(board, side) {
+  const opponent = side === 1 ? 2 : 1
+  let score = 0
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r][c] === side) score += scoreCell(board, r, c, side)
+      else if (board[r][c] === opponent) score -= scoreCell(board, r, c, opponent)
+    }
+  }
+  return score
+}
+
+// 후보를 매 노드마다 새로 채점·정렬. tt에 저장된 수(ttMove)가 있으면 최우선 탐색
+// (트랜스포지션 테이블 적중 시 이전에 좋았던 수부터 보므로 알파베타 가지치기 효율이 오름)
+function orderCandidates(board, candidates, side, ttMove) {
+  return candidates
+    .map(c => ({
+      ...c,
+      heuristic: (ttMove && c.row === ttMove.row && c.col === ttMove.col)
+        ? Infinity
+        : scoreCell(board, c.row, c.col, side),
+    }))
+    .sort((a, b) => b.heuristic - a.heuristic)
+    .slice(0, MAX_CANDIDATES_PER_NODE)
+}
+
+// side 관점 negamax. 반환값이 양수면 side(지금 둘 차례)에게 유리.
+// tt: 이번 getAIMove 호출 한 번 동안만 쓰는 Map 기반 Transposition Table
+// deadline: Date.now() 기준 탐색 종료 시각 — 넘으면 그 지점에서 정적 평가로 대체
+function negamax(board, depth, alpha, beta, side, hash, tt, deadline) {
+  const alphaOrig = alpha
+  const entry = tt.get(hash)
+  if (entry && entry.depth >= depth) {
+    if (entry.bound === TT_EXACT) return entry.value
+    if (entry.bound === TT_LOWER) alpha = Math.max(alpha, entry.value)
+    else if (entry.bound === TT_UPPER) beta = Math.min(beta, entry.value)
+    if (alpha >= beta) return entry.value
   }
 
-  const candidates = getCandidates(board)
-
-  if (isMaximizing) {
-    let best = -Infinity
-    for (const { row, col } of candidates) {
-      board[row][col] = aiPlayer
-      if (checkWinBoard(board, row, col, aiPlayer)) {
-        board[row][col] = 0
-        return 100000 * (depth + 1)
-      }
-      const val = minimax(board, depth - 1, alpha, beta, false, aiPlayer)
-      board[row][col] = 0
-      best = Math.max(best, val)
-      alpha = Math.max(alpha, best)
-      if (beta <= alpha) break
-    }
-    return best
-  } else {
-    let best = Infinity
-    for (const { row, col } of candidates) {
-      board[row][col] = humanPlayer
-      if (checkWinBoard(board, row, col, humanPlayer)) {
-        board[row][col] = 0
-        return -100000 * (depth + 1)
-      }
-      const val = minimax(board, depth - 1, alpha, beta, true, aiPlayer)
-      board[row][col] = 0
-      best = Math.min(best, val)
-      beta = Math.min(beta, best)
-      if (beta <= alpha) break
-    }
-    return best
+  if (depth === 0 || Date.now() > deadline) {
+    return evaluate(board, side)
   }
+
+  const opponent = side === 1 ? 2 : 1
+  const candidates = orderCandidates(board, getCandidates(board), side, entry?.bestMove)
+
+  let best = -Infinity
+  let bestMove = null
+
+  for (const { row, col } of candidates) {
+    board[row][col] = side
+    if (checkWinBoard(board, row, col, side)) {
+      board[row][col] = 0
+      const val = WIN_SCORE + depth
+      tt.set(hash, { depth, value: val, bound: TT_EXACT, bestMove: { row, col } })
+      return val
+    }
+    const childHash = hash ^ ZOBRIST[row][col][side]
+    const val = -negamax(board, depth - 1, -beta, -alpha, opponent, childHash, tt, deadline)
+    board[row][col] = 0
+
+    if (val > best) { best = val; bestMove = { row, col } }
+    if (best > alpha) alpha = best
+    if (alpha >= beta) break
+  }
+
+  if (bestMove) {
+    const bound = best <= alphaOrig ? TT_UPPER : best >= beta ? TT_LOWER : TT_EXACT
+    tt.set(hash, { depth, value: best, bound, bestMove })
+  }
+
+  return best
+}
+
+// 루트에서 후보 하나씩 negamax(상대 관점)를 호출해 최선의 수를 찾는다.
+// deadline을 넘기면 이번 depth는 미완료로 처리해 호출부가 이전 depth 결과를 유지하게 한다.
+function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline) {
+  const opponent = aiPlayer === 1 ? 2 : 1
+  const ordered = orderCandidates(board, candidates, aiPlayer, tt.get(hash)?.bestMove)
+
+  let alpha = -Infinity
+  let bestMove = null
+  let bestScore = -Infinity
+
+  for (const { row, col } of ordered) {
+    board[row][col] = aiPlayer
+    if (checkWinBoard(board, row, col, aiPlayer)) {
+      board[row][col] = 0
+      return { move: { row, col }, score: WIN_SCORE + depth, complete: true }
+    }
+    const childHash = hash ^ ZOBRIST[row][col][aiPlayer]
+    const val = -negamax(board, depth - 1, -Infinity, -alpha, opponent, childHash, tt, deadline)
+    board[row][col] = 0
+
+    if (Date.now() > deadline) {
+      return { move: bestMove, score: bestScore, complete: false }
+    }
+
+    if (val > bestScore) { bestScore = val; bestMove = { row, col } }
+    if (bestScore > alpha) alpha = bestScore
+  }
+
+  if (bestMove) tt.set(hash, { depth, value: bestScore, bound: TT_EXACT, bestMove })
+  return { move: bestMove, score: bestScore, complete: true }
+}
+
+// 반복심화(Iterative Deepening): 시간 예산 안에서 depth 1→2→3…로 점점 깊이 탐색하고,
+// 끝까지 완료된 depth의 결과만 채택한다 (도중에 시간이 끝난 depth의 부분 결과는 버림).
+// Transposition Table을 depth 사이에서 재사용해 얕은 depth에서 찾은 최선 수가
+// 다음 depth의 탐색 순서를 앞당겨준다.
+function iterativeDeepeningSearch(board, candidates, aiPlayer, timeBudgetMs) {
+  const deadline = Date.now() + timeBudgetMs
+  const tt = new Map()
+  const rootHash = computeHash(board)
+
+  let overallBest = candidates[0]
+  for (let depth = 1; depth <= MAX_SEARCH_DEPTH; depth++) {
+    if (Date.now() > deadline) break
+    const result = rootSearch(board, candidates, depth, aiPlayer, rootHash, tt, deadline)
+    if (!result.complete || !result.move) break
+    overallBest = result.move
+    if (result.score >= WIN_SCORE) break // 확정 승리 수순을 찾았으면 더 깊이 볼 필요 없음
+  }
+  return overallBest
 }
 
 export function getAIMove(board, aiPlayer) {
@@ -305,8 +418,6 @@ export function getAIMove(board, aiPlayer) {
   }
 
   const candidates = getCandidates(board)
-  let bestScore = -Infinity
-  let bestMove = candidates[0]
 
   // 빠른 승리/패배 방어 체크
   for (const { row, col } of candidates) {
@@ -336,22 +447,6 @@ export function getAIMove(board, aiPlayer) {
   const vcf = searchVCF(board, aiPlayer, 0)
   if (vcf) return vcf[0]
 
-  // Minimax depth=3
-  const sortedCandidates = candidates
-    .map(c => ({ ...c, heuristic: scoreCell(board, c.row, c.col, aiPlayer) }))
-    .sort((a, b) => b.heuristic - a.heuristic)
-    .slice(0, 20)
-
-  for (const { row, col } of sortedCandidates) {
-    board[row][col] = aiPlayer
-    const score = minimax(board, 3, -Infinity, Infinity, false, aiPlayer)
-    board[row][col] = 0
-
-    if (score > bestScore) {
-      bestScore = score
-      bestMove = { row, col }
-    }
-  }
-
-  return bestMove
+  // 반복심화 + Transposition Table 탐색 (시간 예산 TIME_BUDGET_MS 안에서 최대한 깊이)
+  return iterativeDeepeningSearch(board, candidates, aiPlayer, TIME_BUDGET_MS)
 }
