@@ -7,9 +7,14 @@ function cell(board, r, c) {
 }
 
 // 흑(1) 기준 금수 판정. '장목' | '44' | '33' | null 반환
-function checkForbidden(board, row, col, depth = 0) {
+// evaluating: 현재 재귀 평가 중인 위치 키 집합 (순환 참조 방지용)
+function checkForbidden(board, row, col, evaluating = new Set()) {
   if (board[row][col] !== 0) return null
+  const key = row * BOARD_SIZE + col
+  // 이미 평가 중인 지점이 fill 후보로 나오면 금수로 간주 (순환 시 보수적 처리)
+  if (evaluating.has(key)) return '33'
 
+  evaluating.add(key)
   board[row][col] = 1
   let result = null
 
@@ -18,20 +23,21 @@ function checkForbidden(board, row, col, depth = 0) {
   } else {
     let fours = 0
     for (const [dr, dc] of DIRS) {
-      if (_hasFour(board, row, col, dr, dc)) fours++
+      if (_hasFour(board, row, col, dr, dc, evaluating)) fours++
       if (fours >= 2) { result = '44'; break }
     }
 
     if (!result) {
       let threes = 0
       for (const [dr, dc] of DIRS) {
-        if (_hasOpenThree(board, row, col, dr, dc, depth)) threes++
+        if (_hasOpenThree(board, row, col, dr, dc, evaluating)) threes++
         if (threes >= 2) { result = '33'; break }
       }
     }
   }
 
   board[row][col] = 0
+  evaluating.delete(key)
   return result
 }
 
@@ -45,8 +51,8 @@ function _isOverline(board, row, col) {
   return false
 }
 
-// 방향 하나에서 사(四) 여부: 5칸 윈도우 내 흑4+빈1, 빈자리 채우면 정확히 5
-function _hasFour(board, row, col, dr, dc) {
+// 방향 하나에서 사(四) 여부
+function _hasFour(board, row, col, dr, dc, evaluating) {
   for (let off = 0; off <= 4; off++) {
     const sr = row - off*dr, sc = col - off*dc
     let blacks = 0, er = -1, ec = -1, ok = true, has = false
@@ -62,29 +68,29 @@ function _hasFour(board, row, col, dr, dc) {
     }
     if (!ok || blacks !== 4 || er === -1 || !has) continue
 
-    // 빈 자리 채웠을 때 정확히 5인지 확인 (장목이면 거짓사)
     board[er][ec] = 1
     let n = 1
     for (let d = 1; d <= 5; d++) { if (cell(board, er+dr*d, ec+dc*d) !== 1) break; n++ }
     for (let d = 1; d <= 5; d++) { if (cell(board, er-dr*d, ec-dc*d) !== 1) break; n++ }
     board[er][ec] = 0
 
-    if (n === 5) return true
+    if (n !== 5) continue
+
+    // 거짓사: 완성 자리가 금수이면 진짜 사가 아님
+    if (checkForbidden(board, er, ec, evaluating) !== null) continue
+
+    return true
   }
   return false
 }
 
 // 방향 하나에서 열린삼(三) 여부
-// 패턴: 6칸 윈도우에서 _ B B B _ _ 등 → 채우면 열린사 _ B B B B _
-// 거짓금수: 채우는 자리 자체가 금수이면 진짜 삼이 아님
-function _hasOpenThree(board, row, col, dr, dc, depth) {
-  // [패턴(6칸), fillIdx, 흑위치 인덱스들]
-  // 채운 결과가 반드시 _ B B B B _ (열린사) 여야 함
+function _hasOpenThree(board, row, col, dr, dc, evaluating) {
   const PATS = [
-    [[0,1,1,1,0,0], 4, [1,2,3]],  // _ B B B _ _  → 4번 채움
-    [[0,0,1,1,1,0], 1, [2,3,4]],  // _ _ B B B _  → 1번 채움
-    [[0,1,0,1,1,0], 2, [1,3,4]],  // _ B _ B B _  → 2번 채움
-    [[0,1,1,0,1,0], 3, [1,2,4]],  // _ B B _ B _  → 3번 채움
+    [[0,1,1,1,0,0], 4, [1,2,3]],
+    [[0,0,1,1,1,0], 1, [2,3,4]],
+    [[0,1,0,1,1,0], 2, [1,3,4]],
+    [[0,1,1,0,1,0], 3, [1,2,4]],
   ]
 
   for (let off = 0; off <= 5; off++) {
@@ -93,11 +99,8 @@ function _hasOpenThree(board, row, col, dr, dc, depth) {
 
     for (const [pat, fi, bis] of PATS) {
       if (!cells.every((v, i) => v === pat[i])) continue
-
-      // (row, col) 이 흑 위치에 포함되어야 함
       if (!bis.some(i => sr+i*dr === row && sc+i*dc === col)) continue
 
-      // 채웠을 때 열린사인지 확인 (run=4, 양쪽 빈칸)
       const fr = sr+fi*dr, fc = sc+fi*dc
       board[fr][fc] = 1
       let left = 0, right = 0
@@ -110,8 +113,8 @@ function _hasOpenThree(board, row, col, dr, dc, depth) {
 
       if (run !== 4 || !lOpen || !rOpen) continue
 
-      // 거짓금수: 채우는 자리가 흑 입장에서 금수면 진짜 삼이 아님
-      if (depth < 2 && checkForbidden(board, fr, fc, depth + 1) !== null) continue
+      // 거짓금수: 채우는 자리가 금수이면 진짜 삼이 아님
+      if (checkForbidden(board, fr, fc, evaluating) !== null) continue
 
       return true
     }

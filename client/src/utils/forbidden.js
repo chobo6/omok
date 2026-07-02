@@ -6,9 +6,12 @@ function cell(board, r, c) {
   return board[r][c]
 }
 
-export function checkForbidden(board, row, col, depth = 0) {
+export function checkForbidden(board, row, col, evaluating = new Set()) {
   if (board[row][col] !== 0) return null
+  const key = row * BOARD_SIZE + col
+  if (evaluating.has(key)) return '33'
 
+  evaluating.add(key)
   board[row][col] = 1
   let result = null
 
@@ -17,20 +20,21 @@ export function checkForbidden(board, row, col, depth = 0) {
   } else {
     let fours = 0
     for (const [dr, dc] of DIRS) {
-      if (_hasFour(board, row, col, dr, dc)) fours++
+      if (_hasFour(board, row, col, dr, dc, evaluating)) fours++
       if (fours >= 2) { result = '44'; break }
     }
 
     if (!result) {
       let threes = 0
       for (const [dr, dc] of DIRS) {
-        if (_hasOpenThree(board, row, col, dr, dc, depth)) threes++
+        if (_hasOpenThree(board, row, col, dr, dc, evaluating)) threes++
         if (threes >= 2) { result = '33'; break }
       }
     }
   }
 
   board[row][col] = 0
+  evaluating.delete(key)
   return result
 }
 
@@ -44,7 +48,7 @@ function _isOverline(board, row, col) {
   return false
 }
 
-function _hasFour(board, row, col, dr, dc) {
+function _hasFour(board, row, col, dr, dc, evaluating) {
   for (let off = 0; off <= 4; off++) {
     const sr = row - off*dr, sc = col - off*dc
     let blacks = 0, er = -1, ec = -1, ok = true, has = false
@@ -66,12 +70,16 @@ function _hasFour(board, row, col, dr, dc) {
     for (let d = 1; d <= 5; d++) { if (cell(board, er-dr*d, ec-dc*d) !== 1) break; n++ }
     board[er][ec] = 0
 
-    if (n === 5) return true
+    if (n !== 5) continue
+
+    if (checkForbidden(board, er, ec, evaluating) !== null) continue
+
+    return true
   }
   return false
 }
 
-function _hasOpenThree(board, row, col, dr, dc, depth) {
+function _hasOpenThree(board, row, col, dr, dc, evaluating) {
   const PATS = [
     [[0,1,1,1,0,0], 4, [1,2,3]],
     [[0,0,1,1,1,0], 1, [2,3,4]],
@@ -99,7 +107,7 @@ function _hasOpenThree(board, row, col, dr, dc, depth) {
 
       if (run !== 4 || !lOpen || !rOpen) continue
 
-      if (depth < 2 && checkForbidden(board, fr, fc, depth + 1) !== null) continue
+      if (checkForbidden(board, fr, fc, evaluating) !== null) continue
 
       return true
     }
