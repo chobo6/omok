@@ -53,6 +53,10 @@ function analyzeDirection(line, player) {
 function scoreCell(board, row, col, player) {
   let score = 0
   const opp = player === 1 ? 2 : 1
+  let myFourDirs = 0
+  let myThreeDirs = 0
+  let enemyFourDirs = 0
+  let enemyThreeDirs = 0
 
   for (const [dr, dc] of DIRECTIONS) {
     const line = buildLine(board, row, col, dr, dc)
@@ -60,15 +64,24 @@ function scoreCell(board, row, col, player) {
     const enemy = analyzeDirection(line, opp)
 
     if (mine.five) score += 100000
-    else if (mine.fourWindows >= 1) score += 10000
-    else if (mine.threeWindows >= 2) score += 1000
-    else if (mine.threeWindows === 1) score += 100
+    else if (mine.fourWindows >= 1) { score += 10000; myFourDirs++ }
+    else if (mine.threeWindows >= 2) { score += 1000; myThreeDirs++ }
+    else if (mine.threeWindows === 1) { score += 100; myThreeDirs++ }
     else if (mine.twoWindows >= 2) score += 10
 
     if (enemy.five) score += 50000
-    else if (enemy.fourWindows >= 1) score += 8000
-    else if (enemy.threeWindows >= 2) score += 500
+    else if (enemy.fourWindows >= 1) { score += 8000; enemyFourDirs++ }
+    else if (enemy.threeWindows >= 2) { score += 500; enemyThreeDirs++ }
+    else if (enemy.threeWindows === 1) enemyThreeDirs++ // 점수는 없지만(비대칭 평가) 포크 판정엔 반영
   }
+
+  // 복합 위협(포크) 보너스: 서로 다른 두 방향에서 동시에 위협이 겹치면 한 수로 둘 다
+  // 못 막으므로, 단순 합산보다 훨씬 위험/유리함을 반영
+  if (myFourDirs >= 2) score += 80000
+  else if (myFourDirs >= 1 && myThreeDirs >= 1) score += 5000
+
+  if (enemyFourDirs >= 2) score += 40000
+  else if (enemyFourDirs >= 1 && enemyThreeDirs >= 1) score += 2500
 
   return score
 }
@@ -219,8 +232,23 @@ function findFourMoves(board, player) {
   return moves
 }
 
+// candidates 중 player가 두면 즉시 5목이 되는 자리가 있는지 확인
+function hasImmediateWin(board, candidates, player) {
+  for (const { row, col } of candidates) {
+    board[row][col] = player
+    const wins = checkWinBoard(board, row, col, player)
+    board[row][col] = 0
+    if (wins) return true
+  }
+  return false
+}
+
 // VCF(Victory by Continuous Fours): 사(四)만 연속으로 만들어 상대를 강제로 방어시키며 오목을 완성하는 수순 탐색.
-// 상대는 항상 유일한 완성 지점을 막는다고 가정 (상대의 반격 가능성은 고려하지 않는 단순화된 탐색)
+// 상대는 유일한 완성 지점을 막는다고 가정하되, 그 전에 상대에게 우리가 강제하기도 전에
+// 즉시 이길 수 있는 수가 생기지 않았는지(=상대 반격) 매 단계 확인한다.
+// (우리가 사를 만드는 동안 상대에게 억지로 두게 한 방어 돌들이 누적되면서, 상대의 기존
+// 돌과 우연히 이어져 상대의 5목/사 위협이 새로 생길 수 있음 — 그 경우 상대는 막지 않고
+// 그냥 이겨버리므로 이 수순은 강제승리가 아님)
 function searchVCF(board, player, depth) {
   if (depth >= VCF_MAX_DEPTH) return null
 
@@ -229,11 +257,22 @@ function searchVCF(board, player, depth) {
   for (const { row, col, completions } of findFourMoves(board, player)) {
     board[row][col] = player
 
-    const isWin = checkWinBoard(board, row, col, player) || completions.length >= 2
-
-    if (isWin) {
+    if (checkWinBoard(board, row, col, player)) {
       board[row][col] = 0
-      return [{ row, col }]
+      return [{ row, col }] // 지금 이 수로 실제 5목 완성 — 상대 턴 자체가 없는 즉시 승리
+    }
+
+    // 상대 반격 확인: 여기부터는(오픈사 주장이든, 이후 강제 블록이든) 다음은 상대 차례이므로,
+    // 상대에게 이미 즉시 승리 수가 있으면 상대는 막지 않고 그 수로 먼저 이겨버림.
+    // 특히 완성 지점이 2곳 이상(오픈사)이라 해도 상대가 그보다 먼저 이길 수 있으면 가짜 승리 주장임
+    if (hasImmediateWin(board, getCandidates(board), opponent)) {
+      board[row][col] = 0
+      continue
+    }
+
+    if (completions.length >= 2) {
+      board[row][col] = 0
+      return [{ row, col }] // 완성 지점 2곳 이상 & 상대 반격 없음 확인됨 — 진짜 강제승리
     }
 
     const block = completions[0]

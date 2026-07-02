@@ -56,8 +56,17 @@
 - 평가함수 대칭성(`evaluate(board,1) === -evaluate(board,2)`) 검증 통과 — negamax 전환 시 흔한 부호 버그 없음 확인
 - `npx vite build` 정상 통과
 
+### 2단계 적용 완료 (같은 날, `client/src/utils/aiEngine.js`)
+- **VCF-defend(`hasImmediateWin`)**: `searchVCF`가 사(四)를 강제할 때마다 상대에게 이미 즉시 승리 수가 없는지 확인. 검증 테스트를 구성하던 중 "오픈사 주장 분기가 이 확인을 우회하는" 순서 버그를 추가로 발견해 함께 수정 (`docs/TROUBLESHOOTING.md` #6)
+- **포크 보너스**: `scoreCell`에 서로 다른 두 방향에서 동시에 사/삼 위협이 겹치는 경우 추가 점수 (더블사 +80000, 사+삼 복합 +5000)
+
+### 2단계 검증
+- `hasImmediateWin` 단위 테스트: 상대 열린삼(사 아님)→`false`, 강제 블록으로 오픈사 생성 후→`true` 정확히 전환 확인
+- 포크 보너스 단위 테스트: 단일 사(10000) vs 더블사(100000=10000×2+80000), 사+삼 복합(16000, 창 개수까지 직접 검산) — 계산값과 실측값 일치 확인
+- P0 회귀(열린사/열린삼 방어), 적법성, 시간예산, `vite build` 전부 정상
+
 ### 남은 단계 (아래 "AI 엔진" TODO 참고)
-2단계(VCF 상대방어 탐색, 조합 패턴 평가표), 3단계(Killer/History, PVS, 바운딩박스)는 아직 미착수 — 검증 부담을 줄이려고 단계별로 나눠서 진행 중
+3단계(Killer/History, PVS, 바운딩박스)는 아직 미착수
 
 ---
 
@@ -77,8 +86,8 @@
 ### AI 엔진 (`docs/TECHNICAL_SPEC.md` 5절 "성능 개선 방향" 상세, Rapfi 리서치 기반)
 - [x] Iterative Deepening + 시간 제한 (2026-07-03 완료)
 - [x] Zobrist Hashing + Transposition Table (2026-07-03 완료)
-- [ ] VCF에 상대 방어 탐색(VCF-defend) 추가 — 2단계
-- [ ] 조합 패턴 평가표 (Rapfi `Pattern4` 개념) — 2단계
+- [x] VCF에 상대 방어 탐색(VCF-defend) 추가 (2026-07-03 완료, 1수 앞만 확인하는 단순화된 버전 — 완전한 재귀 탐색은 3단계 이후로 미룸)
+- [x] 복합 위협(포크) 평가 보너스 (2026-07-03 완료, Rapfi `Pattern4`같은 12단계 조합표는 아니고 단순 보너스 수준)
 - [ ] Killer Move / History Heuristic 후보 정렬 — 3단계
 - [ ] PVS(Principal Variation Search) — 3단계
 - [ ] 후보 영역 바운딩박스 증분 관리 — 3단계

@@ -219,3 +219,55 @@ function findCriticalDefenseCells(board, candidates, opponent) {
 
 ### 관련 파일
 - `client/src/utils/aiEngine.js` — `findCriticalDefenseCells` 추가, `getAIMove`의 방어 체크 교체
+
+---
+
+## #6 AI의 VCF 강제 승리 탐색이 상대 반격을 검증하지 않음 (+ 수정 중 발견한 2차 버그)
+
+### 증상 (설계상 결함, 재현 버그는 아님)
+`searchVCF`는 자기 자신이 사(四)를 연속으로 만들어 상대를 강제로 방어시키는 수순을 탐색하면서, 상대가 항상 유일한 완성 지점을 막는다고만 가정했음. 그런데 그 강제 방어 돌들이 누적되는 동안 상대의 기존 돌과 우연히 이어져 상대에게 새로운 즉시 승리 기회(오픈사 등)가 생겨도 알아채지 못함 — 실전에서는 상대가 막지 않고 그냥 자기가 먼저 이겨버리므로, 이런 경우 AI가 찾은 "강제 승리 수순"은 사실 강제가 아님.
+
+### 원인 분석
+`docs/TECHNICAL_SPEC.md` "알려진 한계"에 이미 "VCF의 상대 반격 미검증"으로 문서화돼 있던 항목. Rapfi(`vcfdefend`)가 참고 사례.
+
+### 해결 (+ 검증 중 발견한 버그)
+
+`hasImmediateWin(board, candidates, player)` 헬퍼를 추가해, `searchVCF`가 사(四)를 만들 때마다 "지금 상대에게 이미 즉시 승리 수가 있는가"를 확인하도록 수정.
+
+**1차 구현의 버그**: 이 확인을 `completions.length >= 2`(오픈사라서 즉시 승리로 간주하는 분기) 이후에 배치했더니, AI가 오픈사를 만드는 순간 상대 반격 확인 없이 곧장 `isWin=true`로 승리를 주장해버리는 경로가 남아있었음. 실전에서는 AI가 오픈사를 만들어도 그 다음은 **상대 차례**이므로, 상대가 이미 다른 즉시 승리 수를 갖고 있다면 상대가 먼저 이겨버림 — 검증 테스트를 직접 구성하려던 중 이 순서 문제를 발견해서, `checkWinBoard`(진짜 5목 완성, 상대 턴 자체가 없음)만 먼저 처리하고, 그 외의 모든 경우(오픈사 주장 포함)는 `hasImmediateWin` 확인을 거치도록 순서를 재조정.
+
+```javascript
+// client/src/utils/aiEngine.js
+for (const { row, col, completions } of findFourMoves(board, player)) {
+  board[row][col] = player
+
+  if (checkWinBoard(board, row, col, player)) {
+    board[row][col] = 0
+    return [{ row, col }] // 지금 이 수로 실제 5목 완성 — 상대 턴 자체가 없는 즉시 승리
+  }
+
+  if (hasImmediateWin(board, getCandidates(board), opponent)) {
+    board[row][col] = 0
+    continue // 상대가 우리보다 먼저 이길 수 있음 — 이 수순은 강제승리 아님
+  }
+
+  if (completions.length >= 2) {
+    board[row][col] = 0
+    return [{ row, col }] // 완성 지점 2곳 이상 & 상대 반격 없음 확인됨 — 진짜 강제승리
+  }
+
+  const block = completions[0]
+  // ...이하 기존과 동일: 상대를 강제로 막게 하고 재귀
+}
+```
+
+### 검증
+- `hasImmediateWin` 단위 테스트: 상대가 열린삼(아직 사 아님) 상태 → `false`, 강제 블록으로 오픈사를 갖게 된 상태 → `true`로 정확히 전환되는 것 확인
+- 기존 정상 VCF 탐색 경로가 에러 없이 계속 동작하는 것 확인 (회귀)
+- P0(열린사/열린삼 방어) 회귀, 적법성, 시간예산, `vite build` 전부 정상
+
+### 교훈
+검증 테스트를 직접 구성하려고 시나리오를 짜보는 과정에서, 코드만 읽었을 때는 못 봤던 순서 버그(오픈사 주장 분기가 반격 확인을 우회하는 것)를 발견함. "일단 짜고 봤을 때 맞아 보인다"와 "구체적 반례를 만들어보려다 발견한 허점"은 다르다는 걸 보여주는 사례.
+
+### 관련 파일
+- `client/src/utils/aiEngine.js` — `hasImmediateWin` 추가, `searchVCF` 순서 수정
