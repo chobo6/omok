@@ -130,3 +130,48 @@ PORTS.forEach(port => {
 ### 관련 파일
 - `kill-ports.js` — 포트 정리 스크립트
 - `package.json` (루트) — `predev`, `dev` 스크립트
+
+---
+
+## #4 거짓사(四) 판정 누락 및 거짓금수 재귀 깊이 제한으로 인한 오판정
+
+### 증상
+거짓삼(열린삼을 완성하는 자리가 금수인 경우 진짜 삼으로 인정하지 않는 처리)은 구현되어 있었지만, 사(四)에 대해서는 동일한 예외 처리가 없었음. 또한 거짓삼 판정 자체도 재귀 깊이를 `depth < 2`로 임의 제한해, 3단계 이상 중첩된 거짓금수 상황에서 부정확한 결과가 나올 수 있었음.
+
+### 원인 분석
+
+**`_hasFour`**: 5칸 윈도우에 흑돌 4개 + 빈칸 1개가 있고, 그 빈칸을 채우면 정확히 5개(장목 아님)가 되면 곧바로 `true`(사 성립)를 반환했음. 그 빈칸이 흑 입장에서 그 자체로 금수(33/44/장목)인지는 검사하지 않았음 — 렌주룰상 이런 경우는 "거짓사"로 사(四)로 인정하지 않아야 하는데 구현이 빠져 있었음.
+
+**`_hasOpenThree`**: 채우는 자리에 대해 `checkForbidden`을 재귀 호출하긴 했지만, `depth < 2`일 때만 호출하고 그 이상 깊이에서는 검사를 생략한 채 무조건 진짜 삼으로 처리했음. 무한 재귀를 막기 위한 임시방편이었으나, 재귀 깊이가 실제 순환(같은 좌표로 되돌아옴) 여부와 무관하게 고정 상수로 끊겨 있어 3단계 이상 중첩된 케이스를 놓칠 수 있었음.
+
+### 해결
+
+`checkForbidden(board, row, col, evaluating)`에 현재 재귀 스택에서 평가 중인 좌표를 담는 `evaluating` Set을 추가:
+- 함수 진입 시 `evaluating`에 좌표를 추가하고, 종료 시 제거 (스택 프레임과 1:1 대응)
+- 이미 평가 중인 좌표가 다시 fill 후보로 나오면(이론상 board 점유 체크로 이미 걸러지지만 방어적으로) 보수적으로 금수(`'33'`) 처리
+- `_hasFour`에도 `_hasOpenThree`와 동일하게 완성 자리에 대한 `checkForbidden` 재귀 호출을 추가해 거짓사를 판정
+- 임의의 `depth < 2` 상한을 제거 — 순환이 없는 한 깊이 제한 없이 정확하게 재귀 검증
+
+```javascript
+// server/forbidden.js, client/src/utils/forbidden.js 공통
+function checkForbidden(board, row, col, evaluating = new Set()) {
+  if (board[row][col] !== 0) return null
+  const key = row * BOARD_SIZE + col
+  if (evaluating.has(key)) return '33'   // 순환 시 보수적 처리
+  evaluating.add(key)
+  ...
+  evaluating.delete(key)
+  return result
+}
+
+function _hasFour(board, row, col, dr, dc, evaluating) {
+  ...
+  if (n !== 5) continue
+  if (checkForbidden(board, er, ec, evaluating) !== null) continue  // 거짓사 체크 추가
+  return true
+}
+```
+
+### 관련 파일
+- `server/forbidden.js` — `checkForbidden`/`_hasFour`/`_hasOpenThree` 수정 (CJS)
+- `client/src/utils/forbidden.js` — 동일 수정 (ESM)

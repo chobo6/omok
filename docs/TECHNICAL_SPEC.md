@@ -1,7 +1,7 @@
 # 기술 설계서 — 온라인 오목
 
-> **버전**: 1.0  
-> **작성일**: 2026-07-01
+> **버전**: 1.1  
+> **작성일**: 2026-07-02
 
 ---
 
@@ -35,26 +35,35 @@ Express 서버 (Node.js)
 ```
 omok/
 ├── server/
-│   ├── index.js          # Express + Socket.io 서버 진입점
-│   └── gameLogic.js      # 순수 게임 로직 (보드 생성, 5목 판정)
+│   ├── index.js          # Express + Socket.io 서버 진입점, REST(/api/rooms, /api/leaderboard)
+│   ├── gameLogic.js      # 순수 게임 로직 (보드 생성, 5목 판정)
+│   ├── forbidden.js      # 렌주룰 금수 판정 (CJS)
+│   ├── ratings.js        # ELO 레이팅 계산/저장
+│   └── data/
+│       └── ratings.json  # ELO 레이팅 영구 저장 파일 (런타임 생성, gitignore 처리)
 │
 ├── client/
-│   ├── vite.config.js    # Vite 설정 + /socket.io 프록시
+│   ├── vite.config.js    # Vite 설정 + /socket.io, /api 프록시
 │   └── src/
-│       ├── App.jsx        # 페이지 라우팅 (lobby ↔ game)
+│       ├── App.jsx        # 페이지 라우팅 (lobby ↔ game ↔ leaderboard)
 │       ├── pages/
-│       │   ├── Lobby.jsx  # 방 생성/입장/AI 대전 선택
-│       │   └── Game.jsx   # 게임 화면 (보드, 채팅, 타이머 통합)
+│       │   ├── Lobby.jsx       # 비공개방/공개방/랭킹전 3탭 + AI 대전 선택
+│       │   ├── Game.jsx        # 게임 화면 (보드, 채팅, 타이머, 레이팅 통합)
+│       │   └── Leaderboard.jsx # 랭킹 순위표
 │       ├── components/
-│       │   ├── Board.jsx      # Canvas 오목판 렌더링
+│       │   ├── Board.jsx      # Canvas 오목판 렌더링, 금수 삼각형 표시
 │       │   ├── Chat.jsx       # 채팅 UI
-│       │   └── PlayerInfo.jsx # 플레이어 정보 + 타이머
+│       │   └── PlayerInfo.jsx # 플레이어 정보 + 타이머 + 레이팅 배지
 │       └── utils/
-│           └── aiEngine.js    # Minimax AI (클라이언트 사이드)
+│           ├── aiEngine.js    # Minimax + VCF 위협 탐색 AI (클라이언트 사이드)
+│           ├── aiWorker.js    # aiEngine을 Web Worker에서 실행
+│           ├── forbidden.js   # 렌주룰 금수 판정 (ESM)
+│           └── userId.js      # localStorage 기반 익명 UUID 발급
 │
 └── docs/
     ├── PRD.md
-    └── TECHNICAL_SPEC.md
+    ├── TECHNICAL_SPEC.md
+    └── TROUBLESHOOTING.md
 ```
 
 ---
@@ -69,14 +78,26 @@ omok/
   players: string[],        // [socketId_흑, socketId_백]
   nicknames: { [socketId]: string },
   currentTurn: 1 | 2,
-  status: 'waiting' | 'playing' | 'ended',
+  status: 'waiting' | 'playing' | 'ended' | 'ranked_pending',
   lastMove: { row, col, player } | null,
   chat: { nickname, message, time }[],
   timers: { [socketId]: number },   // 남은 시간(초)
   timerInterval: NodeJS.Timeout,
   rematchVotes: Set<string>,        // 재경기 동의 socketId
+  type: 'private' | 'public' | 'ranked',
+  userIds: { [socketId]: string },        // 레이팅 조회용 익명 UUID
+  initialRatings: { [socketId]: number | null }, // 입장 시점 레이팅 스냅샷 (표시용)
+  pendingUsers?: { userId, nickname, rating }[], // status: 'ranked_pending'일 때만 — 매칭됐지만 아직 소켓 미입장
 }
 ```
+
+### 서버 — 랭킹전 매칭 대기열
+
+```js
+rankedQueue: { socketId, userId, nickname, rating }[]
+```
+
+`ranked:queue:join` 시 대기열에 상대가 있으면 즉시 pop해 `ranked_pending` 방을 만들고, 없으면 자신을 대기열에 push. 30초 내 양쪽 모두 `ranked:join`으로 입장하지 않으면 방이 자동 삭제됨.
 
 ### 승리 판정 알고리즘
 
@@ -96,12 +117,20 @@ for each direction (dr, dc):
 
 ## 4. Socket.io 이벤트 명세
 
+### 클라이언트 접속 시 `auth`
+
+소켓 연결 시 `{ auth: { userId } }`로 `userId`(localStorage UUID, `client/src/utils/userId.js`)를 전달. 서버는 `socket.handshake.auth.userId`로 레이팅 조회/갱신 키를 식별 (없으면 레이팅 관련 기능 비활성).
+
 ### 클라이언트 → 서버 (emit)
 
 | 이벤트 | payload | 설명 |
 |---|---|---|
-| `room:create` | `{ nickname }` | 새 방 생성 |
-| `room:join` | `{ roomId, nickname }` | 방 입장 |
+| `room:create` | `{ nickname, type: 'private' \| 'public' }` | 새 방 생성 |
+| `room:join` | `{ roomId, nickname }` | 방 입장 (코드 또는 공개방 목록에서) |
+| `ranked:queue:join` | `{ nickname }` | 랭킹전 매칭 대기열 등록 (대기 상대 있으면 즉시 매칭) |
+| `ranked:queue:leave` | — | 매칭 대기열 취소 |
+| `ranked:join` | `{ roomId }` | 매칭된 랭킹전 방에 실제 소켓 입장 |
+| `profile:get` | — | 내 레이팅/전적 조회 |
 | `game:move` | `{ row, col }` | 착수 |
 | `game:surrender` | — | 항복 |
 | `game:rematch` | — | 재경기 요청 |
@@ -113,13 +142,24 @@ for each direction (dr, dc):
 |---|---|---|
 | `room:created` | `{ roomId }` | 방 생성 완료, 코드 전달 |
 | `room:joined` | `{ roomId }` | 방 입장 성공 |
-| `room:error` | `{ message }` | 입장 실패 사유 |
-| `room:state` | RoomState | 보드/턴/타이머 전체 상태 동기화 |
+| `room:error` | `{ message }` | 입장/매칭 실패 사유 |
+| `room:state` | RoomState | 보드/턴/타이머/레이팅 전체 상태 동기화 |
 | `timer:tick` | `{ socketId, timeLeft }` | 매초 타이머 갱신 |
-| `game:over` | `{ winner, winnerId, reason }` | 게임 종료 |
+| `game:over` | `{ winner, winnerId, reason }` | 게임 종료 (랭킹전이면 서버가 내부적으로 ELO 갱신 후 `rating:update`도 emit) |
 | `game:rematch_requested` | `{ by }` | 상대방 재경기 요청 알림 |
 | `game:restarted` | — | 재경기 시작 |
 | `chat:message` | `{ nickname, message, time }` | 채팅 수신 |
+| `ranked:queue:status` | `{ position }` | 대기열 등록 완료, 대기 순번 |
+| `ranked:match:found` | `{ roomId }` | 매칭 성사, `ranked:join`으로 입장 필요 |
+| `rating:update` | `{ delta, newRating }` | 랭킹전 종료 후 레이팅 변화량/신규 레이팅 |
+| `profile:data` | `{ rating, wins, losses, draws, nickname }` | `profile:get` 응답 |
+
+### REST API
+
+| 엔드포인트 | 설명 |
+|---|---|
+| `GET /api/rooms` | `status: 'waiting'`인 공개방(`type: 'public'`) 목록. 클라이언트가 로비에서 폴링 |
+| `GET /api/leaderboard` | 전적 있는 유저 중 레이팅 상위 20명 (`server/ratings.js`의 `getLeaderboard`) |
 
 #### `room:state` payload 구조
 
@@ -131,10 +171,12 @@ for each direction (dr, dc):
     color: 'black' | 'white',
     nickname: string,
     timeLeft: number,
+    rating: number | null,   // 입장 시점 레이팅 스냅샷 (랭킹전 아니면 null)
   }[],
   currentTurn: 1 | 2,
   status: 'waiting' | 'playing' | 'ended',
   lastMove: { row, col, player } | null,
+  roomType: 'private' | 'public' | 'ranked',
 }
 ```
 
@@ -215,7 +257,67 @@ getAIMove(board, aiPlayer)
 
 ---
 
-## 6. 포트 및 실행 환경
+## 6. 금수 판정 (렌주룰)
+
+### 위치
+`server/forbidden.js` (CJS, 온라인 대전 서버 측 판정) / `client/src/utils/forbidden.js` (ESM, 클라이언트 시각화용). **두 파일은 동일 로직 — 한쪽 수정 시 반드시 양쪽 반영**.
+
+### 핵심 함수: `checkForbidden(board, row, col, evaluating = new Set())`
+
+- 반환값: `'장목'` | `'44'` | `'33'` | `null`(금수 아님)
+- 해당 좌표에 흑돌을 임시로 두고 장목 → 사(四) 2개 이상(44) → 열린삼 2개 이상(33) 순으로 검사한 뒤 원상 복구
+- `evaluating`: 현재 재귀 호출 스택에서 평가 중인 좌표(`row*15+col`) 집합. 순환 재귀 방지용 안전장치 (일반적으로는 board 점유 상태 체크로도 이미 걸러짐)
+
+### 거짓금수(false forbidden) 처리
+
+렌주룰상 열린삼·사를 "완성"시키는 빈 자리가 그 자체로 금수(33/44/장목)이면, 진짜 삼·사로 인정하지 않는다. `_hasOpenThree`/`_hasFour` 모두 완성 자리에 대해 `checkForbidden`을 재귀 호출해 이를 검증하며, 순환이 없는 한 깊이 제한 없이 정확하게 재귀 검증한다 (과거엔 `depth < 2`로 임의 제한했던 버그가 있었음 — `docs/TROUBLESHOOTING.md` #4 참고).
+
+### 시각화
+
+`getForbiddenCells(board)` (client 전용) — 보드 전체를 스캔해 흑 차례에 금수인 좌표 목록을 반환하고, `Board.jsx`가 빨간 삼각형(▲)으로 표시한다.
+
+백(2)에는 금수 규칙이 적용되지 않는다 (AI가 항상 백을 두는 이유이기도 함).
+
+---
+
+## 7. 랭킹전 / ELO 레이팅
+
+### 위치
+`server/ratings.js`
+
+### 개요
+
+- 시작 레이팅 1200, K=32 표준 ELO 공식(`calcElo`)으로 승/패/무 판정 후 자동 갱신
+- `server/data/ratings.json`에 `{ [userId]: { rating, wins, losses, draws, nickname } }` 형태로 저장. 서버 프로세스 재시작에도 유지되지만 로컬 디스크 파일이라 배포 환경 이전 시 정식 DB로 전환 필요 (gitignore 처리되어 저장소에는 포함되지 않음 — 개발 환경마다 독립된 로컬 데이터)
+- `userId`: 클라이언트가 `localStorage`에 저장한 UUID(`client/src/utils/userId.js`)를 소켓 연결 시 `auth`로 전달, 서버가 이를 레이팅 조회/갱신 키로 사용 — 계정/로그인 없는 익명 식별이라 브라우저·기기를 바꾸면 전적이 이어지지 않음
+
+### 매칭 흐름
+
+```
+클라이언트 A: ranked:queue:join
+    │
+    ├─ 대기열에 상대 없음 → 대기열 등록, ranked:queue:status(position) 응답
+    │
+클라이언트 B: ranked:queue:join
+    └─ 대기열에 A 있음 → A를 pop, status:'ranked_pending' 방 생성
+         └─ A, B 모두에게 ranked:match:found({ roomId }) emit
+              └─ 각자 ranked:join({ roomId })으로 실제 소켓 입장
+                   └─ 둘 다 입장 완료 시 status:'playing' 전환, 타이머 시작
+```
+
+30초 내 양쪽 모두 입장하지 않으면 `ranked_pending` 방은 자동 삭제된다.
+
+### 결과 반영
+
+게임 종료 시(`applyRankedRating`) `type: 'ranked'` 방이면 승/패/무 결과를 ELO에 반영하고, 양쪽 소켓에 `rating:update`(변화량 + 신규 레이팅) emit. `Game.jsx`가 이를 받아 종료 모달에 레이팅 변화(예: `+32 → 1232`)를 표시한다.
+
+### 순위표
+
+`GET /api/leaderboard`가 전적 있는 유저를 레이팅 순으로 상위 20명 반환하고 `Leaderboard.jsx`가 렌더링한다.
+
+---
+
+## 8. 포트 및 실행 환경
 
 | 항목 | 값 |
 |---|---|
@@ -226,8 +328,10 @@ getAIMove(board, aiPlayer)
 
 ---
 
-## 7. 알려진 제약사항
+## 9. 알려진 제약사항
 
-- **서버 재시작 시 게임 초기화**: 상태를 메모리에만 보관하므로 서버 재시작 시 모든 방이 사라짐
+- **서버 재시작 시 게임 초기화**: 방/게임 상태를 메모리에만 보관하므로 서버 재시작 시 모든 방이 사라짐 (ELO 레이팅은 예외 — 7절 참고)
+- **레이팅 파일 저장소는 임시방편**: `server/data/ratings.json` 단일 파일 읽기/쓰기 방식이라 동시 쓰기 경합이나 멀티 서버 확장을 고려하지 않음. 정식 서비스 전환 시 DB 필요
+- **익명 식별 한계**: `userId`가 `localStorage` UUID라 브라우저 데이터 삭제나 기기 변경 시 레이팅 전적이 끊김 (계정 시스템 없음)
 - **단일 서버**: 수평 확장 시 Socket.io 세션 공유를 위해 Redis adapter 필요
 - **AI 성능**: depth-3 Minimax는 매 착수마다 최대 20개 후보 × 3수 = 클라이언트 CPU 사용. Web Worker에서 실행되어 페이지 자체가 멈추진 않지만, 저사양 기기에서는 착수까지 체감 지연이 있을 수 있음 (한계 및 개선 방향은 5절 참고)
