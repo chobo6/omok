@@ -175,3 +175,47 @@ function _hasFour(board, row, col, dr, dc, evaluating) {
 ### 관련 파일
 - `server/forbidden.js` — `checkForbidden`/`_hasFour`/`_hasOpenThree` 수정 (CJS)
 - `client/src/utils/forbidden.js` — 동일 수정 (ESM)
+
+---
+
+## #5 AI가 상대의 열린사(오픈 포)를 절반만 막고 패배
+
+### 증상
+상대(흑)가 양끝이 열린 4목(`. B B B B .`)을 만들면, AI는 두 완성 지점 중 한쪽만 막고 다음 차례에 반대쪽으로 바로 짐.
+
+### 원인 분석
+`getAIMove`의 "빠른 승리/패배 방어 체크"가 후보를 순회하다 **상대가 이기는 자리를 처음 발견하는 즉시 그 자리 하나만 반환**하고 종료됨. 상대가 이길 수 있는 자리가 2곳 이상인지는 확인하지 않았음. 열린사는 정의상 한 수로 막을 수 없는 패턴인데, 이 로직은 마치 막을 수 있는 것처럼 동작하다 실패함. 게다가 이 체크가 VCF·Minimax보다 먼저 실행되고 즉시 `return`하기 때문에, 더 나은 판단을 할 기회 자체가 없었음.
+
+재현: `. B B B B .` 형태를 만든 뒤 AI 턴을 시뮬레이션 → 한쪽만 막고 반대쪽 방치 확인 (테스트 스크립트로 재현 및 수정 후 검증 완료).
+
+### 해결
+
+`findCriticalDefenseCells(board, candidates, opponent)` 신규 함수로 교체:
+- 각 후보에 대해 상대가 두면 (a) 즉시 5목 승리하거나 (b) 완성 지점이 2곳 이상인 사(四)를 만드는지 확인
+- 조건을 만족하는 자리를 **전부 수집**
+- 1곳이면 그 자리를 막고, 2곳 이상이면 (이미 열린사가 만들어진, 사실상 이미 진 상황) 휴리스틱 점수가 가장 높은 자리를 막음
+
+부가 효과: 상대가 아직 삼(열린삼) 단계일 때도, 그 수가 "완성 지점 2곳짜리 사"로 이어지는 자리라면 critical cell로 잡혀 한쪽 끝을 미리 막음 — 열린사 자체가 만들어지는 걸 예방.
+
+```javascript
+// client/src/utils/aiEngine.js
+function findCriticalDefenseCells(board, candidates, opponent) {
+  const critical = []
+  for (const { row, col } of candidates) {
+    board[row][col] = opponent
+    const wins = checkWinBoard(board, row, col, opponent)
+    const fourThreats = wins ? [] : getFourThreats(board, row, col, opponent)
+    board[row][col] = 0
+    if (wins || fourThreats.length >= 2) critical.push({ row, col })
+  }
+  return critical
+}
+```
+
+### 검증
+- 이미 열린사가 만들어진 상황: 한쪽은 막되(불가피하게 이미 늦은 상황), 최소한 무작위가 아니라 휴리스틱상 나은 쪽을 막음
+- 열린삼 상황(신규 방지 대상): 수정 전에는 감지 자체가 안 됐지만, 수정 후에는 한쪽 끝을 미리 막아 열린사로 발전하는 것을 차단 — 이후 상대가 반대쪽에 둬도 단순 사(완성지점 1곳)가 되어 정상적으로 막힘
+- 일반 국면(위급 상황 없음) 다수에서 수정 전/후 착수가 동일함을 확인 — 회귀 없음
+
+### 관련 파일
+- `client/src/utils/aiEngine.js` — `findCriticalDefenseCells` 추가, `getAIMove`의 방어 체크 교체

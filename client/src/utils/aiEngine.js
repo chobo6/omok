@@ -191,6 +191,22 @@ function getFourThreats(board, row, col, player) {
   })
 }
 
+// candidates 중 opponent가 두면 (a) 즉시 5목 승리하거나 (b) 완성 지점이 2곳 이상인
+// 사(四, 열린사/더블사)를 만들어 다음 수에 한 곳만 막아선 못 막는 자리를 모두 반환.
+// 즉시방어가 "막을 수 있는 곳 1곳"만 찾고 멈추면 열린사처럼 원천적으로 막을 수 없는
+// 위협을 절반만 막고 나머지 절반을 방치하는 문제가 생기므로, 반드시 전부 모아야 함
+function findCriticalDefenseCells(board, candidates, opponent) {
+  const critical = []
+  for (const { row, col } of candidates) {
+    board[row][col] = opponent
+    const wins = checkWinBoard(board, row, col, opponent)
+    const fourThreats = wins ? [] : getFourThreats(board, row, col, opponent)
+    board[row][col] = 0
+    if (wins || fourThreats.length >= 2) critical.push({ row, col })
+  }
+  return critical
+}
+
 // 후보 수 중 "사(四)"를 만드는 수만 골라, 그 사를 막을 완성 지점과 함께 반환
 function findFourMoves(board, player) {
   const moves = []
@@ -303,13 +319,17 @@ export function getAIMove(board, aiPlayer) {
   }
 
   const humanPlayer = aiPlayer === 1 ? 2 : 1
-  for (const { row, col } of candidates) {
-    board[row][col] = humanPlayer
-    if (checkWinBoard(board, row, col, humanPlayer)) {
-      board[row][col] = 0
-      return { row, col }
-    }
-    board[row][col] = 0
+  const criticalCells = findCriticalDefenseCells(board, candidates, humanPlayer)
+  if (criticalCells.length === 1) {
+    return criticalCells[0]
+  }
+  if (criticalCells.length >= 2) {
+    // 한 수로 다 못 막는 다중 위협(예: 이미 만들어진 열린사) — 그나마 가장 가치 있는
+    // 한 곳이라도 막는다. 상대가 착수 하나로 이런 다중 위협을 새로 만드는 경우라면
+    // (예: 열린삼) 그 착수 자리 자체가 critical cell 중 하나로 잡히므로 여기서 막힘
+    return criticalCells
+      .map(c => ({ ...c, heuristic: scoreCell(board, c.row, c.col, aiPlayer) }))
+      .sort((a, b) => b.heuristic - a.heuristic)[0]
   }
 
   // VCF(연속사 강제 승리 수순) 탐색 - 있으면 그 수순의 첫 수를 바로 둔다
