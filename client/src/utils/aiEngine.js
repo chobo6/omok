@@ -314,7 +314,7 @@ function computeHash(board) {
   return hash
 }
 
-const WIN_SCORE = 1000000
+const WIN_SCORE = 10000000
 const TT_EXACT = 0
 const TT_LOWER = 1
 const TT_UPPER = 2
@@ -322,17 +322,49 @@ const MAX_CANDIDATES_PER_NODE = 20
 const TIME_BUDGET_MS = 2000
 const MAX_SEARCH_DEPTH = 12
 
-// side(1|2) 관점 평가. 양수면 side에게 유리
-function evaluate(board, side) {
-  const opponent = side === 1 ? 2 : 1
+// 5칸 윈도우 안의 (내 돌 개수)별 가중치. 상대 돌이 섞인 윈도우는 위협이 아니므로 0.
+// 윈도우를 보드 전체에서 "한 번씩만" 세기 때문에, 기존 evaluate처럼 돌 개수만큼
+// 같은 위협을 중복 계산하던 문제(열린삼 1개를 3000으로 부풀리던 것)가 사라진다.
+const WINDOW_WEIGHTS = [0, 1, 100, 1000, 10000, 100000] // index = 윈도우 내 내 돌 개수(0~5)
+
+// 보드 전체에서 player의 위협을 5칸 윈도우 가중합으로 계산.
+// 각 방향마다 라인 시작점(진행 방향으로 한 칸 뒤가 보드 밖인 칸)에서만 훑어,
+// 모든 5칸 윈도우가 정확히 한 번씩만 계산되도록 한다.
+function boardScore(board, player) {
   let score = 0
-  for (let r = 0; r < BOARD_SIZE; r++) {
-    for (let c = 0; c < BOARD_SIZE; c++) {
-      if (board[r][c] === side) score += scoreCell(board, r, c, side)
-      else if (board[r][c] === opponent) score -= scoreCell(board, r, c, opponent)
+  for (const [dr, dc] of DIRECTIONS) {
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const pr = r - dr, pc = c - dc
+        if (pr >= 0 && pr < BOARD_SIZE && pc >= 0 && pc < BOARD_SIZE) continue // 라인 시작점 아님
+
+        // (r,c)에서 시작하는 라인 수집
+        const line = []
+        let cr = r, cc = c
+        while (cr >= 0 && cr < BOARD_SIZE && cc >= 0 && cc < BOARD_SIZE) {
+          line.push(board[cr][cc]); cr += dr; cc += dc
+        }
+
+        // 5칸 윈도우 슬라이딩
+        for (let s = 0; s + 5 <= line.length; s++) {
+          let mine = 0, blocked = false
+          for (let i = s; i < s + 5; i++) {
+            const v = line[i]
+            if (v === player) mine++
+            else if (v !== 0) { blocked = true; break } // 상대 돌 포함 → 위협 아님
+          }
+          if (!blocked && mine > 0) score += WINDOW_WEIGHTS[mine]
+        }
+      }
     }
   }
   return score
+}
+
+// side(1|2) 관점 평가. 양수면 side에게 유리
+function evaluate(board, side) {
+  const opponent = side === 1 ? 2 : 1
+  return boardScore(board, side) - boardScore(board, opponent)
 }
 
 // 후보를 매 노드마다 새로 채점·정렬. tt에 저장된 수(ttMove)가 있으면 최우선 탐색
@@ -469,6 +501,16 @@ export function getAIMove(board, aiPlayer) {
   }
 
   const humanPlayer = aiPlayer === 1 ? 2 : 1
+
+  // 내 강제 승리(VCF)를 방어보다 먼저 확인한다.
+  // VCF가 성립하면 상대는 매 수 내 사(四)를 막느라 자기 위협을 완성할 틈이 없으므로,
+  // 상대가 무슨 위협을 걸어왔든 그냥 밀어붙여 이기는 게 최선이다.
+  // (searchVCF는 내부적으로 매 단계 hasImmediateWin으로 상대의 즉시 승리 가능성을 확인하므로,
+  //  상대가 지금 당장 이길 수 있는 상황이면 스스로 null을 반환해 아래 방어 로직으로 넘어간다)
+  const vcf = searchVCF(board, aiPlayer, 0)
+  if (vcf) return vcf[0]
+
+  // 위급 방어: 상대가 다음 수로 이기거나 한 수로 못 막는 위협을 만드는 자리
   const criticalCells = findCriticalDefenseCells(board, candidates, humanPlayer)
   if (criticalCells.length === 1) {
     return criticalCells[0]
@@ -481,10 +523,6 @@ export function getAIMove(board, aiPlayer) {
       .map(c => ({ ...c, heuristic: scoreCell(board, c.row, c.col, aiPlayer) }))
       .sort((a, b) => b.heuristic - a.heuristic)[0]
   }
-
-  // VCF(연속사 강제 승리 수순) 탐색 - 있으면 그 수순의 첫 수를 바로 둔다
-  const vcf = searchVCF(board, aiPlayer, 0)
-  if (vcf) return vcf[0]
 
   // 반복심화 + Transposition Table 탐색 (시간 예산 TIME_BUDGET_MS 안에서 최대한 깊이)
   return iterativeDeepeningSearch(board, candidates, aiPlayer, TIME_BUDGET_MS)
