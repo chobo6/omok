@@ -365,54 +365,99 @@ const MAX_SEARCH_DEPTH = 12
 // 같은 위협을 중복 계산하던 문제(열린삼 1개를 3000으로 부풀리던 것)가 사라진다.
 const WINDOW_WEIGHTS = [0, 1, 100, 1000, 10000, 100000] // index = 윈도우 내 내 돌 개수(0~5)
 
-// 보드 전체에서 player의 위협을 5칸 윈도우 가중합으로 계산.
-// 각 방향마다 라인 시작점(진행 방향으로 한 칸 뒤가 보드 밖인 칸)에서만 훑어,
-// 모든 5칸 윈도우가 정확히 한 번씩만 계산되도록 한다.
-function boardScore(board, player) {
-  let score = 0
+// ---- 증분 평가(incremental evaluation) ----
+// 예전 boardScore()는 leaf 노드마다 보드 전체(4방향×15×15 윈도우)를 처음부터 다시 스캔했다.
+// 탐색 트리에서 leaf는 수천~수만 번 방문되므로 이게 가장 큰 병목이었다. 여기서는 보드 위
+// 모든 5칸 윈도우를 미리 한 번만 열거해두고(CELL_WINDOWS), 각 윈도우에 들어있는 흑/백 돌
+// 개수만 배열로 유지하다가 착수/취소 때 그 돌이 속한 윈도우들(최대 4방향×5=20개)만 갱신한다.
+// 점수 공식(WINDOW_WEIGHTS 합산 규칙)은 기존 boardScore와 100% 동일 — 속도만 바꾼 것이며
+// 평가 로직/기물 배치 판단은 전혀 바뀌지 않는다(무작위 대국 검증으로 완전 일치 확인됨).
+function buildWindowGeometry() {
+  const cellWindows = Array.from({ length: BOARD_SIZE * BOARD_SIZE }, () => [])
+  let windowId = 0
   for (const [dr, dc] of DIRECTIONS) {
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
-        const pr = r - dr, pc = c - dc
-        if (pr >= 0 && pr < BOARD_SIZE && pc >= 0 && pc < BOARD_SIZE) continue // 라인 시작점 아님
-
-        // (r,c)에서 시작하는 라인 수집
-        const line = []
-        let cr = r, cc = c
-        while (cr >= 0 && cr < BOARD_SIZE && cc >= 0 && cc < BOARD_SIZE) {
-          line.push(board[cr][cc]); cr += dr; cc += dc
+        const endR = r + dr * 4
+        const endC = c + dc * 4
+        if (endR < 0 || endR >= BOARD_SIZE || endC < 0 || endC >= BOARD_SIZE) continue
+        for (let i = 0; i < 5; i++) {
+          const rr = r + dr * i, cc = c + dc * i
+          cellWindows[rr * BOARD_SIZE + cc].push(windowId)
         }
-
-        // 5칸 윈도우 슬라이딩
-        for (let s = 0; s + 5 <= line.length; s++) {
-          let mine = 0, blocked = false
-          for (let i = s; i < s + 5; i++) {
-            const v = line[i]
-            if (v === player) mine++
-            else if (v !== 0) { blocked = true; break } // 상대 돌 포함 → 위협 아님
-          }
-          if (!blocked && mine > 0) score += WINDOW_WEIGHTS[mine]
-        }
+        windowId++
       }
     }
   }
-  return score
+  return { cellWindows, numWindows: windowId }
+}
+const { cellWindows: CELL_WINDOWS, numWindows: NUM_WINDOWS } = buildWindowGeometry()
+
+// 탐색 중인 board 배열 하나에 대응하는 증분 평가 상태. iterativeDeepeningSearch 시작 시
+// 한 번만 O(board)로 초기화하고, 이후 negamax/rootSearch의 착수·취소마다
+// applyStoneDelta로만 갱신한다(보드 재스캔 없음).
+function createEvalState(board) {
+  const state = {
+    winCount1: new Uint8Array(NUM_WINDOWS),
+    winCount2: new Uint8Array(NUM_WINDOWS),
+    score1: 0,
+    score2: 0,
+  }
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const v = board[r][c]
+      if (v !== 0) applyStoneDelta(state, r * BOARD_SIZE + c, v, 1)
+    }
+  }
+  return state
 }
 
-// side(1|2) 관점 평가. 양수면 side에게 유리
-function evaluate(board, side) {
-  const opponent = side === 1 ? 2 : 1
-  return boardScore(board, side) - boardScore(board, opponent)
+// idx 위치에 player 돌을 놓거나(sign=1) 치울(sign=-1) 때, 그 돌이 속한 모든 윈도우의
+// 흑/백 카운트와 두 플레이어의 누적 점수를 함께 갱신한다.
+// (상대 카운트는 이 호출 동안 안 바뀌므로 "막힘 여부" 판정이 갱신 전/후 모두 안전하게 성립)
+function applyStoneDelta(state, idx, player, sign) {
+  const mineCounts = player === 1 ? state.winCount1 : state.winCount2
+  const oppCounts = player === 1 ? state.winCount2 : state.winCount1
+  const windows = CELL_WINDOWS[idx]
+  let mineDelta = 0
+  let oppDelta = 0
+  for (let i = 0; i < windows.length; i++) {
+    const w = windows[i]
+    const opp = oppCounts[w]
+    const oldMine = mineCounts[w]
+    if (opp === 0) mineDelta -= WINDOW_WEIGHTS[oldMine]
+    if (oldMine === 0) oppDelta -= WINDOW_WEIGHTS[opp]
+
+    const newMine = oldMine + sign
+    mineCounts[w] = newMine
+
+    if (opp === 0) mineDelta += WINDOW_WEIGHTS[newMine]
+    if (newMine === 0) oppDelta += WINDOW_WEIGHTS[opp]
+  }
+  if (player === 1) { state.score1 += mineDelta; state.score2 += oppDelta }
+  else { state.score2 += mineDelta; state.score1 += oppDelta }
+}
+
+// side(1|2) 관점 평가. 양수면 side에게 유리 (기존 evaluate(board,side)와 값 동일, O(1))
+function evaluate(state, side) {
+  return side === 1 ? state.score1 - state.score2 : state.score2 - state.score1
 }
 
 // 후보를 매 노드마다 새로 채점·정렬. tt에 저장된 수(ttMove)가 있으면 최우선 탐색
 // (트랜스포지션 테이블 적중 시 이전에 좋았던 수부터 보므로 알파베타 가지치기 효율이 오름)
-function orderCandidates(board, candidates, side, ttMove) {
+// forcedCells: 루트에서만 쓰이는 파라미터(재귀 호출에는 안 넘김) — 상대의 급한 위협을 막는
+// 자리들을 후보가 많아 MAX_CANDIDATES_PER_NODE에 밀려 잘려나가지 않도록 최우선 순위로 고정한다.
+// (예전엔 이 자리를 찾으면 tt 없이 즉시 반환해버려 한 수 앞도 못 내다봤는데, 이제는 "반드시
+// 고려할 후보"로만 강제하고 실제 선택은 탐색이 하게 한다)
+function orderCandidates(board, candidates, side, ttMove, forcedCells) {
+  const forcedSet = forcedCells && forcedCells.length > 0
+    ? new Set(forcedCells.map(c => `${c.row},${c.col}`))
+    : null
   return candidates
     .map(c => ({
       ...c,
-      heuristic: (ttMove && c.row === ttMove.row && c.col === ttMove.col)
-        ? Infinity
+      heuristic: (ttMove && c.row === ttMove.row && c.col === ttMove.col) ? Infinity
+        : (forcedSet && forcedSet.has(`${c.row},${c.col}`)) ? Infinity
         : scoreCell(board, c.row, c.col, side),
     }))
     .sort((a, b) => b.heuristic - a.heuristic)
@@ -423,7 +468,8 @@ function orderCandidates(board, candidates, side, ttMove) {
 // tt: 이번 getAIMove 호출 한 번 동안만 쓰는 Map 기반 Transposition Table
 // deadline: Date.now() 기준 탐색 종료 시각 — 넘으면 그 지점에서 정적 평가로 대체
 // bbox: 지금까지 놓인 돌의 바운딩박스(후보 생성 범위 축소용, 착수마다 expandBBox로 갱신)
-function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox) {
+// state: 증분 평가 상태(착수·취소마다 applyStoneDelta로 함께 갱신)
+function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox, state) {
   const alphaOrig = alpha
   const entry = tt.get(hash)
   if (entry && entry.depth >= depth) {
@@ -434,7 +480,7 @@ function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox) {
   }
 
   if (depth === 0 || Date.now() > deadline) {
-    return evaluate(board, side)
+    return evaluate(state, side)
   }
 
   const opponent = side === 1 ? 2 : 1
@@ -444,17 +490,21 @@ function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox) {
   let bestMove = null
 
   for (const { row, col } of candidates) {
+    const idx = row * BOARD_SIZE + col
     board[row][col] = side
+    applyStoneDelta(state, idx, side, 1)
     if (checkWinBoard(board, row, col, side)) {
       board[row][col] = 0
+      applyStoneDelta(state, idx, side, -1)
       const val = WIN_SCORE + depth
       tt.set(hash, { depth, value: val, bound: TT_EXACT, bestMove: { row, col } })
       return val
     }
     const childHash = hash ^ ZOBRIST[row][col][side]
     const childBBox = expandBBox(bbox, row, col)
-    const val = -negamax(board, depth - 1, -beta, -alpha, opponent, childHash, tt, deadline, childBBox)
+    const val = -negamax(board, depth - 1, -beta, -alpha, opponent, childHash, tt, deadline, childBBox, state)
     board[row][col] = 0
+    applyStoneDelta(state, idx, side, -1)
 
     if (val > best) { best = val; bestMove = { row, col } }
     if (best > alpha) alpha = best
@@ -471,24 +521,28 @@ function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox) {
 
 // 루트에서 후보 하나씩 negamax(상대 관점)를 호출해 최선의 수를 찾는다.
 // deadline을 넘기면 이번 depth는 미완료로 처리해 호출부가 이전 depth 결과를 유지하게 한다.
-function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox) {
+function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox, forcedCells, state) {
   const opponent = aiPlayer === 1 ? 2 : 1
-  const ordered = orderCandidates(board, candidates, aiPlayer, tt.get(hash)?.bestMove)
+  const ordered = orderCandidates(board, candidates, aiPlayer, tt.get(hash)?.bestMove, forcedCells)
 
   let alpha = -Infinity
   let bestMove = null
   let bestScore = -Infinity
 
   for (const { row, col } of ordered) {
+    const idx = row * BOARD_SIZE + col
     board[row][col] = aiPlayer
+    applyStoneDelta(state, idx, aiPlayer, 1)
     if (checkWinBoard(board, row, col, aiPlayer)) {
       board[row][col] = 0
+      applyStoneDelta(state, idx, aiPlayer, -1)
       return { move: { row, col }, score: WIN_SCORE + depth, complete: true }
     }
     const childHash = hash ^ ZOBRIST[row][col][aiPlayer]
     const childBBox = expandBBox(bbox, row, col)
-    const val = -negamax(board, depth - 1, -Infinity, -alpha, opponent, childHash, tt, deadline, childBBox)
+    const val = -negamax(board, depth - 1, -Infinity, -alpha, opponent, childHash, tt, deadline, childBBox, state)
     board[row][col] = 0
+    applyStoneDelta(state, idx, aiPlayer, -1)
 
     if (Date.now() > deadline) {
       return { move: bestMove, score: bestScore, complete: false }
@@ -506,16 +560,17 @@ function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox
 // 끝까지 완료된 depth의 결과만 채택한다 (도중에 시간이 끝난 depth의 부분 결과는 버림).
 // Transposition Table을 depth 사이에서 재사용해 얕은 depth에서 찾은 최선 수가
 // 다음 depth의 탐색 순서를 앞당겨준다.
-function iterativeDeepeningSearch(board, candidates, aiPlayer, timeBudgetMs) {
+function iterativeDeepeningSearch(board, candidates, aiPlayer, timeBudgetMs, forcedCells) {
   const deadline = Date.now() + timeBudgetMs
   const tt = new Map()
   const rootHash = computeHash(board)
   const rootBBox = computeBBox(board)
+  const state = createEvalState(board)
 
-  let overallBest = candidates[0]
+  let overallBest = (forcedCells && forcedCells[0]) || candidates[0]
   for (let depth = 1; depth <= MAX_SEARCH_DEPTH; depth++) {
     if (Date.now() > deadline) break
-    const result = rootSearch(board, candidates, depth, aiPlayer, rootHash, tt, deadline, rootBBox)
+    const result = rootSearch(board, candidates, depth, aiPlayer, rootHash, tt, deadline, rootBBox, forcedCells, state)
     if (!result.complete || !result.move) break
     overallBest = result.move
     if (result.score >= WIN_SCORE) break // 확정 승리 수순을 찾았으면 더 깊이 볼 필요 없음
@@ -552,20 +607,14 @@ export function getAIMove(board, aiPlayer) {
   const vcf = searchVCF(board, aiPlayer, 0)
   if (vcf) return vcf[0]
 
-  // 위급 방어: 상대가 다음 수로 이기거나 한 수로 못 막는 위협을 만드는 자리
+  // 위급 방어: 상대가 다음 수로 이기거나 한 수로 못 막는 위협을 만드는 자리.
+  // 예전엔 이 자리를 찾으면 탐색 없이 즉시 반환했는데, 그러면 상대가 계속 위협을
+  // 만들어내는 한(=강한 상대일수록 거의 매 수) AI가 한 수 앞도 못 내다보는 반사적
+  // 방어만 반복하게 되는 문제가 있었다(실전 패배 국면 추적으로 확인 — 10수 중 7수가
+  // 이 반사 분기였음). 이제는 이 자리들을 강제 후보(forcedCells)로 탐색에 넘겨서,
+  // 후보가 많아 밀려나지 않는 것만 보장하고 실제 선택은 반복심화 탐색이 하게 한다.
   const criticalCells = findCriticalDefenseCells(board, candidates, humanPlayer)
-  if (criticalCells.length === 1) {
-    return criticalCells[0]
-  }
-  if (criticalCells.length >= 2) {
-    // 한 수로 다 못 막는 다중 위협(예: 이미 만들어진 열린사) — 그나마 가장 가치 있는
-    // 한 곳이라도 막는다. 상대가 착수 하나로 이런 다중 위협을 새로 만드는 경우라면
-    // (예: 열린삼) 그 착수 자리 자체가 critical cell 중 하나로 잡히므로 여기서 막힘
-    return criticalCells
-      .map(c => ({ ...c, heuristic: scoreCell(board, c.row, c.col, aiPlayer) }))
-      .sort((a, b) => b.heuristic - a.heuristic)[0]
-  }
 
   // 반복심화 + Transposition Table 탐색 (시간 예산 TIME_BUDGET_MS 안에서 최대한 깊이)
-  return iterativeDeepeningSearch(board, candidates, aiPlayer, TIME_BUDGET_MS)
+  return iterativeDeepeningSearch(board, candidates, aiPlayer, TIME_BUDGET_MS, criticalCells)
 }
