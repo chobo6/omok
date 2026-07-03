@@ -86,12 +86,21 @@ function scoreCell(board, row, col, player) {
   return score
 }
 
-function getCandidates(board) {
+// bbox(돌이 놓인 영역의 최소 사각형)를 넘기면 그 영역(+range)만 스캔한다.
+// 생략 시 보드 전체를 스캔(기존 동작과 동일) — bbox 밖에는 돌이 없다는 게 보장될 때만 안전하므로,
+// 탐색 트리 내부(negamax)에서 매 노드 착수마다 갱신되는 bbox를 넘겨받아 쓴다
+const FULL_BBOX = { minR: 0, maxR: BOARD_SIZE - 1, minC: 0, maxC: BOARD_SIZE - 1 }
+
+function getCandidates(board, bbox = FULL_BBOX) {
   const candidates = new Set()
   const range = 2
+  const rLo = Math.max(0, bbox.minR - range)
+  const rHi = Math.min(BOARD_SIZE - 1, bbox.maxR + range)
+  const cLo = Math.max(0, bbox.minC - range)
+  const cHi = Math.min(BOARD_SIZE - 1, bbox.maxC + range)
 
-  for (let r = 0; r < BOARD_SIZE; r++) {
-    for (let c = 0; c < BOARD_SIZE; c++) {
+  for (let r = rLo; r <= rHi; r++) {
+    for (let c = cLo; c <= cHi; c++) {
       if (board[r][c] === 0) continue
       for (let dr = -range; dr <= range; dr++) {
         for (let dc = -range; dc <= range; dc++) {
@@ -113,6 +122,35 @@ function getCandidates(board) {
     const [r, c] = s.split(',').map(Number)
     return { row: r, col: c }
   })
+}
+
+// 현재 보드에 놓인 돌들의 최소 바운딩박스. 탐색 시작 시 한 번만 계산하고,
+// 이후 negamax 재귀에서는 착수할 때마다 expandBBox로 값만 갱신(보드 재스캔 없음)
+function computeBBox(board) {
+  let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r][c] === 0) continue
+      if (r < minR) minR = r
+      if (r > maxR) maxR = r
+      if (c < minC) minC = c
+      if (c > maxC) maxC = c
+    }
+  }
+  if (minR === Infinity) {
+    const mid = Math.floor(BOARD_SIZE / 2)
+    return { minR: mid, maxR: mid, minC: mid, maxC: mid }
+  }
+  return { minR, maxR, minC, maxC }
+}
+
+function expandBBox(bbox, row, col) {
+  return {
+    minR: Math.min(bbox.minR, row),
+    maxR: Math.max(bbox.maxR, row),
+    minC: Math.min(bbox.minC, col),
+    maxC: Math.max(bbox.maxC, col),
+  }
 }
 
 // 상대의 첫 수(항상 정중앙) 직후 AI의 응수를 다양화하기 위한 오프닝 로직.
@@ -384,7 +422,8 @@ function orderCandidates(board, candidates, side, ttMove) {
 // side 관점 negamax. 반환값이 양수면 side(지금 둘 차례)에게 유리.
 // tt: 이번 getAIMove 호출 한 번 동안만 쓰는 Map 기반 Transposition Table
 // deadline: Date.now() 기준 탐색 종료 시각 — 넘으면 그 지점에서 정적 평가로 대체
-function negamax(board, depth, alpha, beta, side, hash, tt, deadline) {
+// bbox: 지금까지 놓인 돌의 바운딩박스(후보 생성 범위 축소용, 착수마다 expandBBox로 갱신)
+function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox) {
   const alphaOrig = alpha
   const entry = tt.get(hash)
   if (entry && entry.depth >= depth) {
@@ -399,7 +438,7 @@ function negamax(board, depth, alpha, beta, side, hash, tt, deadline) {
   }
 
   const opponent = side === 1 ? 2 : 1
-  const candidates = orderCandidates(board, getCandidates(board), side, entry?.bestMove)
+  const candidates = orderCandidates(board, getCandidates(board, bbox), side, entry?.bestMove)
 
   let best = -Infinity
   let bestMove = null
@@ -413,7 +452,8 @@ function negamax(board, depth, alpha, beta, side, hash, tt, deadline) {
       return val
     }
     const childHash = hash ^ ZOBRIST[row][col][side]
-    const val = -negamax(board, depth - 1, -beta, -alpha, opponent, childHash, tt, deadline)
+    const childBBox = expandBBox(bbox, row, col)
+    const val = -negamax(board, depth - 1, -beta, -alpha, opponent, childHash, tt, deadline, childBBox)
     board[row][col] = 0
 
     if (val > best) { best = val; bestMove = { row, col } }
@@ -431,7 +471,7 @@ function negamax(board, depth, alpha, beta, side, hash, tt, deadline) {
 
 // 루트에서 후보 하나씩 negamax(상대 관점)를 호출해 최선의 수를 찾는다.
 // deadline을 넘기면 이번 depth는 미완료로 처리해 호출부가 이전 depth 결과를 유지하게 한다.
-function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline) {
+function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox) {
   const opponent = aiPlayer === 1 ? 2 : 1
   const ordered = orderCandidates(board, candidates, aiPlayer, tt.get(hash)?.bestMove)
 
@@ -446,7 +486,8 @@ function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline) {
       return { move: { row, col }, score: WIN_SCORE + depth, complete: true }
     }
     const childHash = hash ^ ZOBRIST[row][col][aiPlayer]
-    const val = -negamax(board, depth - 1, -Infinity, -alpha, opponent, childHash, tt, deadline)
+    const childBBox = expandBBox(bbox, row, col)
+    const val = -negamax(board, depth - 1, -Infinity, -alpha, opponent, childHash, tt, deadline, childBBox)
     board[row][col] = 0
 
     if (Date.now() > deadline) {
@@ -469,11 +510,12 @@ function iterativeDeepeningSearch(board, candidates, aiPlayer, timeBudgetMs) {
   const deadline = Date.now() + timeBudgetMs
   const tt = new Map()
   const rootHash = computeHash(board)
+  const rootBBox = computeBBox(board)
 
   let overallBest = candidates[0]
   for (let depth = 1; depth <= MAX_SEARCH_DEPTH; depth++) {
     if (Date.now() > deadline) break
-    const result = rootSearch(board, candidates, depth, aiPlayer, rootHash, tt, deadline)
+    const result = rootSearch(board, candidates, depth, aiPlayer, rootHash, tt, deadline, rootBBox)
     if (!result.complete || !result.move) break
     overallBest = result.move
     if (result.score >= WIN_SCORE) break // 확정 승리 수순을 찾았으면 더 깊이 볼 필요 없음
