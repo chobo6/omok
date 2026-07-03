@@ -365,3 +365,39 @@ for (const { row, col, completions } of findFourMoves(board, player)) {
 
 ### 관련 파일
 - `client/src/utils/aiEngine.js` — `orderCandidates`/`rootSearch`/`iterativeDeepeningSearch`에 `forcedCells` 매개변수 추가, `getAIMove`의 위급 방어 즉시반환 로직 제거
+
+---
+
+## #10 aiEngine.js가 렌주 금수를 전혀 몰라 흑의 장목을 승리로 오판, 금수 함정도 활용 못 함
+
+### 배경
+`docs/todo.md` "AI 엔진 성능 향상 여지" 검토 중, `aiEngine.js`에 렌주 금수(33/44/장목) 관련 코드가 전혀 없다는 게 확인됨(`server/forbidden.js`/`client/src/utils/forbidden.js`의 `checkForbidden`과 완전히 분리). AI는 항상 백이라 자기 금수 걱정은 없지만, 다음 두 가지를 놓치고 있었다.
+
+### 문제 1 — 흑의 장목(6목 이상)을 승리로 오판
+`checkWinBoard`는 `count >= 5`만 확인해 5목이든 6목 이상이든 "승리"로 취급한다. 그런데 `server/index.js`(258행)를 보면 흑(`playerNumber===1`)의 착수는 **금수 판정을 승패 판정보다 먼저** 하고, 금수(장목 포함)면 그 자리에서 무조건 백 승리로 즉시 종료한다 — 흑에게는 장목이 "6목 완성"이 아니라 "즉시 패배"다. 그런데 `hasImmediateWin(board, candidates, player=1)`과 `findCriticalDefenseCells(board, candidates, opponent=1)`은 이 구분 없이 흑이 6목 이상을 만드는 자리를 그냥 "즉시 승리"·"위협"으로 판정하고 있었다 — 백이 불필요하게 막으려 들거나(`findCriticalDefenseCells`), `searchVCF`가 "상대가 먼저 이긴다"고 착각해 실제로는 안전한 강제수순을 스스로 포기할 수 있는(`hasImmediateWin`) 잠재적 버그.
+
+### 문제 2 — 사(四)의 유일한 완성지점이 흑 금수인 경우를 활용 못 함
+`searchVCF`는 백의 사(四)가 완성 지점을 1곳만 가지면 "상대가 그 자리를 막는다"고 가정하고 재귀 탐색한다. 하지만 그 완성 지점이 흑에게 33/44/장목 중 하나라면, 흑은 그 자리에 둘 수 없다(두면 5목 완성 여부와 무관하게 즉시 패배). 즉 이 경우 흑은 막을 방법이 없어 완성 지점 2곳 이상(오픈사)인 경우와 마찬가지로 확정승리인데, 기존 코드는 이를 놓치고 계속 "상대가 막는다"고 가정해 더 깊이(때로는 헛되이) 탐색했다.
+
+### 해결
+`client/src/utils/forbidden.js`의 `checkForbidden(board, row, col)`을 `aiEngine.js`에 import해 세 곳에 반영.
+
+- `hasImmediateWin`: `player === 1 && checkForbidden(...) !== null`이면 그 후보를 건너뜀(흑의 금수 자리는 승리 아님)
+- `findCriticalDefenseCells`: `opponent === 1 && checkForbidden(...) !== null`이면 그 후보를 건너뜀(흑의 금수 자리는 막을 필요 없는 위협)
+- `searchVCF`: 완성 지점이 1곳이고 `opponent === 1 && checkForbidden(board, block.row, block.col) !== null`이면, 완성 지점 2곳 이상인 경우와 동일하게 즉시 확정승리로 반환
+
+### 검증
+격리 단위 테스트로 정확성을 직접 확인(자가대국은 상대 엔진도 금수 인식이 없어 이 기능을 제대로 시험 못 함 — 아래 "교훈" 참고):
+- **대조군 구성**: 백 삼(row7 col5~7)의 양끝을 흑으로 막아, 사를 만들 수 있는 두 방향(col4 확장/col8 확장) 모두 완성지점이 정확히 1곳씩만 나오게 구성. 한쪽 완성지점(7,8)에 흑의 33 함정(세로+반대각선 열린삼 동시완성)을 깔아둔 버전과, 함정 없이 평범한 빈 칸인 버전을 각각 테스트
+- **함정 있음**: `checkForbidden(board,7,8)` → `'33'` 확인 후 `searchVCF(board,2,0)` → `[{row:7,col:4}]` 반환(확정승리로 인식, 정상)
+- **함정 없음**: 같은 모양에서 `searchVCF` → `null` 반환(강제승리 아님, 정상 — 오탐 없음 확인)
+- 장목 테스트: 흑 4목(col3~6)+빈칸(col8) 상태에서 (7,7)이 장목 금수인지 확인(`checkForbidden` → `'장목'`) 후 `hasImmediateWin`(false 정상)·`findCriticalDefenseCells`(빈 배열 정상) 확인
+- P0 회귀(열린사 방어, 자기 VCF 우선), 성능(2000ms 예산 내 정상), `vite build` 전부 통과
+- Yixin 벤치마크(렌주룰+백, 6판): 베이스라인과 큰 차이 없음(0승6패, 평균 23.7수) — 예상된 결과(아래 교훈 참고)
+
+### 교훈
+이 기능은 "사의 유일한 완성지점이 하필 상대 금수"라는 매우 구체적인 전술적 정렬이 있어야만 발동하는 니치 케이스라, 6판 정도의 표본으로는 발동 여부 자체가 우연에 가깝다 — 이 세션에서 실패했던 여섯 번의 "모든 국면에 일반 적용되는" 시도들과 성격이 다르므로, Yixin 벤치마크 승수만으로 채택 여부를 판단하면 안 되고 격리된 단위 테스트로 로직 정확성을 직접 검증하는 게 맞는 방식이었다. 또한 자가대국(미러매치)으로는 이 기능을 애초에 검증할 수 없다는 것도 확인됨 — 상대 엔진도 똑같이 금수를 모르는 `aiEngine.js` 사본이라, 백이 "여기는 흑이 못 막는다"고 판단해도 자가대국 하네스는 금수 규칙을 전혀 강제하지 않아 흑이 그냥 그 자리에 둬버린다. 렌주 규칙을 실제로 지키는 Yixin 상대로만 이 기능의 진짜 효과를 관찰할 수 있다.
+
+### 관련 파일
+- `client/src/utils/aiEngine.js` — `checkForbidden` import 추가, `hasImmediateWin`/`findCriticalDefenseCells`/`searchVCF` 세 곳에 반영
+- `client/src/utils/forbidden.js` — 기존 `checkForbidden` 재사용(수정 없음)

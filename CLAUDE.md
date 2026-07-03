@@ -33,7 +33,7 @@ npm run dev
 | `client/src/pages/Lobby.jsx` | 방 생성/입장/AI 선택/공개방 목록/랭킹전 큐 3탭 화면 |
 | `client/src/pages/Leaderboard.jsx` | 랭킹전 순위표 페이지 (상위 20명) |
 | `client/src/components/Board.jsx` | Canvas 오목판 렌더링, 금수 삼각형 표시 |
-| `client/src/utils/aiEngine.js` | Negamax + Alpha-Beta + 반복심화 + Transposition Table + VCF 위협 탐색 AI (증분 평가함수) |
+| `client/src/utils/aiEngine.js` | Negamax + Alpha-Beta + 반복심화 + Transposition Table + VCF 위협 탐색 AI (증분 평가함수, 렌주 금수 활용) |
 | `client/src/utils/aiWorker.js` | aiEngine을 Web Worker에서 실행 (메인 스레드 블로킹 방지) |
 | `tools/bench-vs-yixin.mjs` | 로컬 Yixin 엔진 상대 AI 실력 검증 벤치마크 (개발용, pbrain 프로토콜) |
 | `client/src/utils/forbidden.js` | 렌주룰 금수 판정 ESM — 클라이언트에서 사용 |

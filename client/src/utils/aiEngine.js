@@ -1,3 +1,5 @@
+import { checkForbidden } from './forbidden.js'
+
 const BOARD_SIZE = 15
 
 // 방향 벡터
@@ -245,10 +247,14 @@ function getFourThreats(board, row, col, player) {
 // candidates 중 opponent가 두면 (a) 즉시 5목 승리하거나 (b) 완성 지점이 2곳 이상인
 // 사(四, 열린사/더블사)를 만들어 다음 수에 한 곳만 막아선 못 막는 자리를 모두 반환.
 // 즉시방어가 "막을 수 있는 곳 1곳"만 찾고 멈추면 열린사처럼 원천적으로 막을 수 없는
-// 위협을 절반만 막고 나머지 절반을 방치하는 문제가 생기므로, 반드시 전부 모아야 함
+// 위협을 절반만 막고 나머지 절반을 방치하는 문제가 생기므로, 반드시 전부 모아야 함.
+// opponent가 흑이면, 그 자리 자체가 흑의 금수(33/44/장목)인 경우는 위협에서 제외한다 —
+// 실제 서버 로직(server/index.js)이 금수를 승패 판정보다 먼저 확인해 흑이 그 자리에
+// 두면 (설령 5목이 완성되더라도) 무조건 즉시 패배 처리하므로, 백이 막을 필요가 없다
 function findCriticalDefenseCells(board, candidates, opponent) {
   const critical = []
   for (const { row, col } of candidates) {
+    if (opponent === 1 && checkForbidden(board, row, col) !== null) continue
     board[row][col] = opponent
     const wins = checkWinBoard(board, row, col, opponent)
     const fourThreats = wins ? [] : getFourThreats(board, row, col, opponent)
@@ -270,9 +276,13 @@ function findFourMoves(board, player) {
   return moves
 }
 
-// candidates 중 player가 두면 즉시 5목이 되는 자리가 있는지 확인
+// candidates 중 player가 두면 즉시 5목이 되는 자리가 있는지 확인.
+// player가 흑이면 그 자리가 금수(33/44/장목)인 경우는 제외 — 흑은 그 자리에 두면
+// 5목이 완성되든 말든 즉시 패배하므로(server/index.js가 금수를 승패보다 먼저 확인),
+// "즉시 승리"가 아니라 "즉시 패배" 자리다
 function hasImmediateWin(board, candidates, player) {
   for (const { row, col } of candidates) {
+    if (player === 1 && checkForbidden(board, row, col) !== null) continue
     board[row][col] = player
     const wins = checkWinBoard(board, row, col, player)
     board[row][col] = 0
@@ -314,6 +324,15 @@ function searchVCF(board, player, depth) {
     }
 
     const block = completions[0]
+
+    // 렌주 금수 활용: 완성 지점이 1곳뿐이어도, 상대가 흑이고 그 자리가 흑에게 금수(33/44/장목)면
+    // 상대는 거기 못 막는다 — 두면 즉시 패배(server/index.js가 금수를 승패보다 먼저 판정), 안
+    // 두면 다음 수에 우리가 오목 완성. 완성 지점 2곳 이상(오픈사)과 동일하게 확정 승리로 처리
+    if (opponent === 1 && checkForbidden(board, block.row, block.col) !== null) {
+      board[row][col] = 0
+      return [{ row, col }]
+    }
+
     board[block.row][block.col] = opponent
     const rest = searchVCF(board, player, depth + 2)
     board[block.row][block.col] = 0
