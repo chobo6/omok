@@ -463,6 +463,23 @@ function evaluate(state, side) {
   return side === 1 ? state.score1 - state.score2 : state.score2 - state.score1
 }
 
+// 루트에서 여러 후보의 negamax 평가값이 완전히 동일할 때(둘 다 "이미 진 판" 등, 실질적
+// 차이가 없는 경우) 쓰는 타이브레이크. 평가함수가 순수 패턴 개수 합산이라 "다 똑같이
+// 나쁘면" 아무 자리나 고를 수 있는데(실전에서 상대와 멀리 떨어진 구석 수를 골라버리는
+// 문제로 발견됨), 기존 돌에 가까운 쪽을 우선해 최소한 판을 계속 걸고 늘어지게 한다.
+// 탐색 결과 자체(alpha-beta pruning, TT)는 건드리지 않고 루트의 최종 선택에만 영향.
+function nearestStoneDistance(board, row, col) {
+  let best = Infinity
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r][c] === 0) continue
+      const d = Math.max(Math.abs(r - row), Math.abs(c - col))
+      if (d < best) best = d
+    }
+  }
+  return best
+}
+
 // 후보를 매 노드마다 새로 채점·정렬. tt에 저장된 수(ttMove)가 있으면 최우선 탐색
 // (트랜스포지션 테이블 적중 시 이전에 좋았던 수부터 보므로 알파베타 가지치기 효율이 오름)
 // forcedCells: 루트에서만 쓰이는 파라미터(재귀 호출에는 안 넘김) — 상대의 급한 위협을 막는
@@ -548,6 +565,7 @@ function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox
   let alpha = -Infinity
   let bestMove = null
   let bestScore = -Infinity
+  let bestDist = Infinity
 
   for (const { row, col } of ordered) {
     const idx = row * BOARD_SIZE + col
@@ -568,7 +586,14 @@ function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox
       return { move: bestMove, score: bestScore, complete: false }
     }
 
-    if (val > bestScore) { bestScore = val; bestMove = { row, col } }
+    if (val > bestScore) {
+      bestScore = val
+      bestMove = { row, col }
+      bestDist = nearestStoneDistance(board, row, col)
+    } else if (val === bestScore) {
+      const dist = nearestStoneDistance(board, row, col)
+      if (dist < bestDist) { bestMove = { row, col }; bestDist = dist }
+    }
     if (bestScore > alpha) alpha = bestScore
   }
 
@@ -628,16 +653,18 @@ export function getAIMove(board, aiPlayer) {
     board[row][col] = 0
   }
 
-  // 오프닝북: 흑 중앙 첫수 + 백의 응수(getOpeningMove) 이후 흑이 실제로 어떻게
-  // 두느냐에 따라 갈리는 4/6수째 국면 중, 로컬 Yixin에게 "너는 백이다"라고 질의해서
-  // 얻은 백의 응수와 정확히 일치하는 경우에만 사용(client/src/utils/openingBook.js 참고).
-  // 안 맞으면 null이 반환돼 정상적으로 아래 탐색으로 넘어감 — 즉시 승리 체크 뒤에 둬서
-  // 혹시라도 이 시점에 진짜 위급한 즉시 승리 수가 있으면 그쪽이 항상 우선하도록 안전장치를 둠.
-  // 북 데이터는 전부 "백이 두면" 기준으로 생성했으므로 aiPlayer가 백(2)일 때만 조회한다 —
-  // 지금은 AI가 항상 백이라 상관없지만, 나중에 AI가 흑으로도 둘 수 있게 되면 흑에게
-  // 백 전용 응수를 잘못 적용하는 버그가 될 수 있어 미리 막아둔다
-  const book = aiPlayer === 2 ? lookupBook(board) : null
-  if (book && board[book.row][book.col] === 0) return book
+  // 오프닝북: 지금 국면이 openingBook.js에 저장된 국면(흑/백 어느 쪽 차례든)과
+  // 정확히 일치하면 그 응수를 그대로 쓴다. 안 맞으면 null이 반환돼 정상적으로
+  // 아래 탐색으로 넘어감 — 즉시 승리 체크 뒤에 둬서 혹시라도 이 시점에 진짜
+  // 위급한 즉시 승리 수가 있으면 그쪽이 항상 우선하도록 안전장치를 둠.
+  // 키가 보드 상태 전체를 그대로 담고 있어 흑/백 항목이 서로 다른 stone-parity
+  // 국면에 걸려 있으므로 색 구분 없이 조회해도 안전하다(흑 차례 국면 키는
+  // aiPlayer===1일 때만, 백 차례 국면 키는 aiPlayer===2일 때만 실제로 매치될 수 있음).
+  // 다만 흑 항목은 이론상 항상 합법이어야 하지만(Yixin을 RULE_RENJU로 질의)
+  // 다른 안전장치들과 동일하게 반환 직전 한 번 더 금수 여부를 확인한다.
+  const book = lookupBook(board)
+  if (book && board[book.row][book.col] === 0 &&
+    !(aiPlayer === 1 && checkForbidden(board, book.row, book.col) !== null)) return book
 
   const humanPlayer = aiPlayer === 1 ? 2 : 1
 
