@@ -430,3 +430,22 @@ for (const { row, col, completions } of findFourMoves(board, player)) {
 
 ### 관련 파일
 - `client/src/utils/forbidden.js`, `server/forbidden.js` — `checkForbidden`에 `fourDirs` 추적 및 삼 집계 시 제외 로직 추가
+
+---
+
+## #12 AI 대전에서 백을 선택해 이겼는데 "AI가 이겼습니다"로 잘못 표시
+
+### 증상
+AI 대전 흑/백 선택 기능 추가 직후, 사용자가 백을 선택해 실제로 승리했는데 결과 모달에 "AI가 이겼습니다"로 표시됨.
+
+### 원인
+`Game.jsx`의 결과 모달이 `gameOver.winner === 1 ? '승리했습니다! 🎉' : 'AI가 이겼습니다'`로 하드코딩돼 있었음 — "사람은 항상 흑(1)"이라는, 이번에 없앤 가정이 이 표시 로직 한 곳에만 남아있었음. `Game.jsx`의 다른 곳(턴 판정, 금수 체크 대상, AI 착수 이펙트, 플레이어 표시 배열)은 전부 `humanPlayer`/`aiPlayer`로 일반화했는데 이 줄만 놓침.
+
+### 해결
+`gameOver.winner === 1` → `gameOver.winner === humanPlayer`로 교체. `grep`으로 "이겼습니다"/"승리했습니다" 문자열이 나오는 다른 위치가 없는지 확인 — 이 한 곳뿐이었음.
+
+### 교훈
+하드코딩된 상수를 변수로 일반화하는 리팩터링에서는 `grep -n "=== 1\b\|=== 2\b"` 같은 포괄적 검색으로 놓친 곳이 없는지 반드시 재확인해야 함 — 처음 구현할 때 UI 로직(턴/클릭/이펙트)은 다 고쳤지만 순수 표시용 텍스트 한 줄은 코드를 눈으로 훑을 때 놓치기 쉬웠음. 실제 사용자가 플레이해보고서야 발견됨 — 이런 종류의 "표시 전용" 버그는 로직 단위 테스트로는 못 잡고 실제로 눈으로 확인해야 함.
+
+### 관련 파일
+- `client/src/pages/Game.jsx` — 결과 모달의 승리 조건을 `humanPlayer` 기반으로 수정

@@ -70,7 +70,7 @@ REST: `GET /api/rooms` (공개방 목록 폴링), `GET /api/leaderboard` (랭킹
 - 서버 재시작 시 모든 방 초기화 (in-memory)
 - **금수 룰**: 렌주룰 적용. 흑의 33/44/장목 착수 시 즉시 패배. 거짓금수(삼·사 완성 자리가 그 자체로 금수면 진짜로 인정 안 함) 허용 — `evaluating` Set으로 순환만 방지하고 깊이 제한 없이 재귀 검증
 - 금수 판정 로직은 서버(`server/forbidden.js` CJS)와 클라이언트(`client/src/utils/forbidden.js` ESM) 양쪽에 동일 로직으로 존재. 수정 시 둘 다 반영해야 함
-- AI는 클라이언트에서 실행 (서버 AI 없음). AI(백)는 금수 제한 없음
+- AI는 클라이언트에서 실행 (서버 AI 없음). **AI 대전 시 로비에서 사람이 흑/백을 선택**(`Lobby.jsx`, `humanColor` config) — 백은 금수 제한 없음, 흑은(사람이든 AI든) 금수 적용. AI가 흑일 땐 `aiEngine.js`가 자기 금수(33/44/장목)를 회피하도록 루트 후보를 필터링 + `Game.jsx`에 이중 안전망(혹시 회피 실패 시 즉시 패배 처리)
 - AI 연산(`getAIMove`)은 `Game.jsx`가 직접 호출하지 않고 `aiWorker.js`(Web Worker)에 위임됨. `postMessage`로 board 전달 → worker가 계산 → 결과만 반환
 - `Game.jsx`에서 소켓 이벤트 핸들러는 stale closure 방지를 위해 `useRef` 패턴 사용
 

@@ -129,13 +129,19 @@
 .btnSecondary { background: #0f3460; color: #eee; border: 1px solid #1a4a80; }
 .btnSecondary:hover { background: #1a4a80; }
 
+.aiColorRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .btnAI {
   background: transparent;
   color: #4a6080;
   border: 1px solid #1a4a80;
   font-size: 14px;
   padding: 10px;
-  margin-top: 4px;
+  margin-top: 0;
 }
 .btnAI:hover { color: #a0aec0; border-color: #4a6080; }
 

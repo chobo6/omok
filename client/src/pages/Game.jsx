@@ -3,7 +3,7 @@ import { io } from 'socket.io-client'
 import Board from '../components/Board'
 import Chat from '../components/Chat'
 import PlayerInfo from '../components/PlayerInfo'
-import { getForbiddenCells } from '../utils/forbidden'
+import { getForbiddenCells, checkForbidden } from '../utils/forbidden'
 import styles from './Game.module.css'
 
 const BOARD_SIZE = 15
@@ -13,8 +13,11 @@ function createBoard() {
 }
 
 export default function Game({ config, userId, onLeave }) {
-  const { mode, nickname, action, roomCode, type: roomTypeConfig } = config
+  const { mode, nickname, action, roomCode, type: roomTypeConfig, humanColor } = config
   const isOnline = mode === 'online'
+  // AI 모드에서 사람/AI가 각각 어느 색인지 — 로비에서 고른 색(humanColor), 기본은 흑
+  const humanPlayer = humanColor === 'white' ? 2 : 1
+  const aiPlayer = humanPlayer === 1 ? 2 : 1
 
   // 공통 상태
   const [board, setBoard] = useState(createBoard())
@@ -163,7 +166,7 @@ export default function Game({ config, userId, onLeave }) {
 
   // ─── AI 착수 ────────────────────────────────────────────────────
   useEffect(() => {
-    if (isOnline || status !== 'playing' || currentTurn !== 2) return
+    if (isOnline || status !== 'playing' || currentTurn !== aiPlayer) return
 
     const worker = aiWorkerRef.current
     if (!worker) return
@@ -177,18 +180,34 @@ export default function Game({ config, userId, onLeave }) {
         worker.removeEventListener('message', handleMessage)
         if (cancelled) return
         const move = e.data
-        if (move) handleLocalMove(move.row, move.col, b)
+        if (!move) return
+
+        // 안전망: AI가 흑일 때 aiEngine.js가 금수를 피하도록 짜여있지만, 혹시라도
+        // 금수를 두면 사람이 금수를 뒀을 때와 동일하게 즉시 패배 처리한다
+        const forbiddenType = aiPlayer === 1 ? checkForbidden(b.map(r => [...r]), move.row, move.col) : null
+        if (forbiddenType) {
+          const bb = b.map(r => [...r])
+          bb[move.row][move.col] = 1
+          setBoard(bb)
+          setLastMove({ row: move.row, col: move.col, player: 1 })
+          clearInterval(timerRef.current)
+          setStatus('ended')
+          setGameOver({ winner: humanPlayer, reason: 'forbidden', forbiddenType, forbiddenMove: { row: move.row, col: move.col } })
+          return
+        }
+
+        handleLocalMove(move.row, move.col, b)
       }
 
       worker.addEventListener('message', handleMessage)
-      worker.postMessage({ board: b, aiPlayer: 2 })
+      worker.postMessage({ board: b, aiPlayer })
     }, 300)
 
     return () => {
       cancelled = true
       clearTimeout(timeout)
     }
-  }, [currentTurn, status, isOnline])
+  }, [currentTurn, status, isOnline, aiPlayer, humanPlayer])
 
   // ─── 돌 놓기 ────────────────────────────────────────────────────
   function handleLocalMove(row, col, currentBoard) {
@@ -248,19 +267,22 @@ export default function Game({ config, userId, onLeave }) {
       // 서버가 금수 판정 후 game:over 처리
       socketRef.current?.emit('game:move', { row, col })
     } else {
-      if (currentTurn !== 1) return  // AI 착수 중 클릭 방지
+      if (currentTurn !== humanPlayer) return  // AI 착수 중 클릭 방지
 
-      // ref로 항상 최신 forbiddenCells 참조 (클로저 stale 방지)
-      const forbiddenHit = forbiddenCellsRef.current.find(f => f.row === row && f.col === col)
-      if (forbiddenHit) {
-        const b = board.map(r => [...r])
-        b[row][col] = 1
-        setBoard(b)
-        setLastMove({ row, col, player: 1 })
-        clearInterval(timerRef.current)
-        setStatus('ended')
-        setGameOver({ winner: 2, reason: 'forbidden', forbiddenType: forbiddenHit.type, forbiddenMove: { row, col } })
-        return
+      // 금수는 흑에게만 적용된다 — 사람이 백을 선택했으면 이 체크 자체가 없음
+      if (humanPlayer === 1) {
+        // ref로 항상 최신 forbiddenCells 참조 (클로저 stale 방지)
+        const forbiddenHit = forbiddenCellsRef.current.find(f => f.row === row && f.col === col)
+        if (forbiddenHit) {
+          const b = board.map(r => [...r])
+          b[row][col] = 1
+          setBoard(b)
+          setLastMove({ row, col, player: 1 })
+          clearInterval(timerRef.current)
+          setStatus('ended')
+          setGameOver({ winner: aiPlayer, reason: 'forbidden', forbiddenType: forbiddenHit.type, forbiddenMove: { row, col } })
+          return
+        }
       }
 
       handleLocalMove(row, col)
@@ -304,12 +326,13 @@ export default function Game({ config, userId, onLeave }) {
   // 내 턴 여부
   const isMyTurn = isOnline
     ? myColor === 'black' ? currentTurn === 1 : currentTurn === 2
-    : currentTurn === 1
+    : currentTurn === humanPlayer
 
   // 보드 클릭 비활성화 조건
-  const boardDisabled = status !== 'playing' || !!gameOver || (isOnline && !isMyTurn) || (!isOnline && currentTurn === 2)
+  const boardDisabled = status !== 'playing' || !!gameOver || (isOnline && !isMyTurn) || (!isOnline && currentTurn === aiPlayer)
 
-  // 흑 차례일 때만 금수 위치 계산 (시각화)
+  // 흑 차례일 때만 금수 위치 계산 (시각화) — AI 모드에서는 흑을 사람이 두든 AI가
+  // 두든 상관없이 표시(사람이 백을 골랐을 때 AI의 흑 착수를 구경하는 용도도 겸함)
   const forbiddenCells = useMemo(() => {
     const isBlackTurn = isOnline ? currentTurn === 1 && myColor === 'black' : currentTurn === 1
     if (status !== 'playing' || !isBlackTurn) return []
@@ -319,10 +342,17 @@ export default function Game({ config, userId, onLeave }) {
   // 항상 최신 금수 목록을 ref에 동기화
   forbiddenCellsRef.current = forbiddenCells
 
-  // 표시용 플레이어 정보 (AI 모드)
+  // 표시용 플레이어 정보 (AI 모드) — humanPlayer/aiPlayer에 따라 흑/백 쪽에
+  // 사람 닉네임과 'AI'를 동적으로 배치
   const aiPlayers = [
-    { id: '1', color: 'black', nickname: nickname || '나', timeLeft: timers[1] },
-    { id: '2', color: 'white', nickname: 'AI', timeLeft: timers[2] },
+    {
+      id: '1', color: 'black', timeLeft: timers[1],
+      nickname: humanPlayer === 1 ? (nickname || '나') : 'AI',
+    },
+    {
+      id: '2', color: 'white', timeLeft: timers[2],
+      nickname: humanPlayer === 2 ? (nickname || '나') : 'AI',
+    },
   ]
 
   // 온라인 모드: timers state(매초 timer:tick으로 갱신)를 timeLeft에 합성
@@ -399,7 +429,7 @@ export default function Game({ config, userId, onLeave }) {
               {gameOver.winner === 0 ? '비겼습니다' :
                isOnline
                  ? (gameOver.winnerId === socketRef.current?.id ? '승리했습니다! 🎉' : '패배했습니다')
-                 : (gameOver.winner === 1 ? '승리했습니다! 🎉' : 'AI가 이겼습니다')}
+                 : (gameOver.winner === humanPlayer ? '승리했습니다! 🎉' : 'AI가 이겼습니다')}
             </div>
             {ratingDelta && (
               <div className={styles.ratingDelta}>

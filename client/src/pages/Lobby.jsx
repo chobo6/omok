@@ -204,13 +204,21 @@ export default function Lobby({ userId, onStart, onLeaderboard }) {
           </div>
         )}
 
-        {/* AI 대전 (항상 하단 고정) */}
-        <button
-          className={`${styles.btn} ${styles.btnAI}`}
-          onClick={() => onStart({ mode: 'ai', nickname: nick })}
-        >
-          AI 대전
-        </button>
+        {/* AI 대전 (항상 하단 고정) — 흑/백 선택 */}
+        <div className={styles.aiColorRow}>
+          <button
+            className={`${styles.btn} ${styles.btnAI}`}
+            onClick={() => onStart({ mode: 'ai', nickname: nick, humanColor: 'black' })}
+          >
+            AI 대전 (흑으로 시작)
+          </button>
+          <button
+            className={`${styles.btn} ${styles.btnAI}`}
+            onClick={() => onStart({ mode: 'ai', nickname: nick, humanColor: 'white' })}
+          >
+            AI 대전 (백으로 시작)
+          </button>
+        </div>
       </div>
     </div>
   )

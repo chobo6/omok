@@ -605,7 +605,18 @@ export function getAIMove(board, aiPlayer) {
     if (opening) return opening
   }
 
-  const candidates = getCandidates(board)
+  // AI가 흑이면 자기 금수(33/44/장목) 자리는 애초에 후보에서 제외한다 — 흑이 금수를
+  // 두면 이기고 지고를 떠나 즉시 패배이므로, 아래 즉시승리/위급방어/탐색 전부 이
+  // 필터링된 목록만 보게 해서 최종 선택이 금수가 될 수 없도록 한다. negamax 재귀
+  // 내부까지는 필터링하지 않음(매 노드 checkForbidden 호출은 백 전용일 때도 항상
+  // 도는 성능 비용이라 기존 탐색 속도를 해칠 위험 — 루트에서 반환하는 수만 방어)
+  const rawCandidates = getCandidates(board)
+  const forbiddenFiltered = aiPlayer === 1
+    ? rawCandidates.filter(({ row, col }) => checkForbidden(board, row, col) === null)
+    : rawCandidates
+  // 극단적으로 후보 전부가 금수인 경우(사실상 불가능하지만) 빈 배열을 반환해 AI가
+  // 착수를 못 하는 것보단, 필터 전 목록으로라도 착수하게 하는 게 안전하다
+  const candidates = forbiddenFiltered.length > 0 ? forbiddenFiltered : rawCandidates
 
   // 빠른 승리/패배 방어 체크
   for (const { row, col } of candidates) {
@@ -635,8 +646,11 @@ export function getAIMove(board, aiPlayer) {
   // 상대가 무슨 위협을 걸어왔든 그냥 밀어붙여 이기는 게 최선이다.
   // (searchVCF는 내부적으로 매 단계 hasImmediateWin으로 상대의 즉시 승리 가능성을 확인하므로,
   //  상대가 지금 당장 이길 수 있는 상황이면 스스로 null을 반환해 아래 방어 로직으로 넘어간다)
+  // searchVCF는 findFourMoves 내부에서 매번 새로 getCandidates(board)를 호출해
+  // 위 금수 필터링을 안 거치므로, AI가 흑일 때 VCF 결과 자체가 금수일 가능성이
+  // (드물지만) 남아있다 — 반환 직전에 한 번 더 확인
   const vcf = searchVCF(board, aiPlayer, 0)
-  if (vcf) return vcf[0]
+  if (vcf && !(aiPlayer === 1 && checkForbidden(board, vcf[0].row, vcf[0].col) !== null)) return vcf[0]
 
   // 위급 방어: 상대가 다음 수로 이기거나 한 수로 못 막는 위협을 만드는 자리.
   // 예전엔 이 자리를 찾으면 탐색 없이 즉시 반환했는데, 그러면 상대가 계속 위협을
