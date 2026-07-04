@@ -617,12 +617,15 @@ export function getAIMove(board, aiPlayer) {
     board[row][col] = 0
   }
 
-  // 오프닝북: 흑 중앙 첫수 + 백의 대각 응수(getOpeningMove) 이후 흑이 실제로 어떻게
-  // 두느냐에 따라 갈리는 4/6수째 국면 중, 로컬 Yixin에게 직접 질의해서 얻은 응수와
-  // 정확히 일치하는 경우에만 사용(client/src/utils/openingBook.js 참고). 안 맞으면
-  // null이 반환돼 정상적으로 아래 탐색으로 넘어감 — 즉시 승리 체크 뒤에 둬서 혹시라도
-  // 이 시점에 진짜 위급한 즉시 승리 수가 있으면 그쪽이 항상 우선하도록 안전장치를 둠
-  const book = lookupBook(board)
+  // 오프닝북: 흑 중앙 첫수 + 백의 응수(getOpeningMove) 이후 흑이 실제로 어떻게
+  // 두느냐에 따라 갈리는 4/6수째 국면 중, 로컬 Yixin에게 "너는 백이다"라고 질의해서
+  // 얻은 백의 응수와 정확히 일치하는 경우에만 사용(client/src/utils/openingBook.js 참고).
+  // 안 맞으면 null이 반환돼 정상적으로 아래 탐색으로 넘어감 — 즉시 승리 체크 뒤에 둬서
+  // 혹시라도 이 시점에 진짜 위급한 즉시 승리 수가 있으면 그쪽이 항상 우선하도록 안전장치를 둠.
+  // 북 데이터는 전부 "백이 두면" 기준으로 생성했으므로 aiPlayer가 백(2)일 때만 조회한다 —
+  // 지금은 AI가 항상 백이라 상관없지만, 나중에 AI가 흑으로도 둘 수 있게 되면 흑에게
+  // 백 전용 응수를 잘못 적용하는 버그가 될 수 있어 미리 막아둔다
+  const book = aiPlayer === 2 ? lookupBook(board) : null
   if (book && board[book.row][book.col] === 0) return book
 
   const humanPlayer = aiPlayer === 1 ? 2 : 1
