@@ -19,14 +19,20 @@ export function checkForbidden(board, row, col, evaluating = new Set()) {
     result = '장목'
   } else {
     let fours = 0
+    const fourDirs = new Set()
     for (const [dr, dc] of DIRS) {
-      if (_hasFour(board, row, col, dr, dc, evaluating)) fours++
+      if (_hasFour(board, row, col, dr, dc, evaluating)) { fours++; fourDirs.add(dr + ',' + dc) }
       if (fours >= 2) { result = '44'; break }
     }
 
     if (!result) {
       let threes = 0
       for (const [dr, dc] of DIRS) {
+        // 이미 사(四)로 판정된 방향은 삼 집계에서 제외한다 — 한 방향의 긴 줄이 사(四)의
+        // 완성지점과 별개로 더 앞쪽의 다른 빈 칸을 완성지점 삼는 "열린삼" 패턴도 동시에
+        // 만족해버려서(같은 돌들을 다르게 잘라 보는 것뿐) 사+삼(4-3, 금수 아님)을
+        // 삼+삼(3-3, 금수)으로 잘못 세는 문제가 있었음
+        if (fourDirs.has(dr + ',' + dc)) continue
         if (_hasOpenThree(board, row, col, dr, dc, evaluating)) threes++
         if (threes >= 2) { result = '33'; break }
       }

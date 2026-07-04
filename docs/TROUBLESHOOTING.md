@@ -401,3 +401,32 @@ for (const { row, col, completions } of findFourMoves(board, player)) {
 ### 관련 파일
 - `client/src/utils/aiEngine.js` — `checkForbidden` import 추가, `hasImmediateWin`/`findCriticalDefenseCells`/`searchVCF` 세 곳에 반영
 - `client/src/utils/forbidden.js` — 기존 `checkForbidden` 재사용(수정 없음)
+
+---
+
+## #11 사삼(4-3)을 삼삼(3-3) 금수로 오판정
+
+### 증상
+사용자가 실제 대국 스크린샷을 보내와 제보: 사(四) 하나 + 삼(三) 하나로 구성된, 렌주룰상 허용되는 "4-3" 모양인데 그 완성 지점이 33(더블삼) 금수로 표시됨.
+
+### 원인 분석
+이미지 속 정확한 좌표를 단정할 수 없어, 사+삼 조합을 여러 방향으로 구성해 `checkForbidden`을 직접 호출하며 체계적으로 재현을 시도함. 가로줄에 흑 (7,6)(7,7) + (7,10), 세로줄에 흑 (6,8)(9,8)을 두고 (7,8)을 검사하면(가로는 사, 세로는 진짜 독립적인 삼) `checkForbidden(board,7,8)`이 `'33'`을 반환하는 것을 확인.
+
+`_hasFour`(7,8, 가로)와 `_hasOpenThree`(7,8, 가로)를 각각 직접 호출해보니 **둘 다 `true`**를 반환함. 원인: `_hasOpenThree`는 6칸 창을 여러 오프셋으로 슬라이딩하며 검사하는데, 이미 사(四)로 완성된 가로줄(col6,7,8,10, col9가 완성지점)이 **더 앞쪽 오프셋에서 다른 빈 칸(col5)을 완성지점 삼는 "열린삼" 패턴과도 동시에 일치**해버림 — 같은 돌들을 다른 창으로 잘라 보는 것뿐인데 별개의 삼으로 잡힘. `checkForbidden`의 삼 집계 루프(`for (const [dr,dc] of DIRS) { if (_hasOpenThree(...)) threes++ ... }`)는 각 방향을 사 여부와 무관하게 독립적으로 카운트하므로, 가로(사이자 가짜삼) + 세로(진짜삼) = threes 2개로 집계돼 33으로 오판정됨. 실제로는 사 1개 + 삼 1개(허용되는 4-3)일 뿐임.
+
+### 해결
+`checkForbidden`에서 사(四) 판정 루프를 돌 때 사로 확인된 방향들을 `fourDirs` Set에 기록해두고, 삼 집계 루프에서 이미 `fourDirs`에 있는 방향은 건너뛰도록 수정. 한 방향이 사로 이미 판정됐다면 그 방향에서 `_hasOpenThree`가 무엇을 반환하든 삼 집계에서 제외한다 — 사와 삼은 서로 다른 방향(줄)에서 나와야 진짜 3-3/4-3 판정이 의미 있기 때문.
+
+`client/src/utils/forbidden.js`(클라이언트 ESM)와 `server/forbidden.js`(서버 CJS) 둘 다 완전히 동일한 로직을 중복 구현하고 있어 같은 버그가 있었고, 둘 다 동일하게 수정함.
+
+### 검증
+- 재현 케이스(사+삼): `null`로 정상화 확인(수정 전 `'33'`)
+- 회귀 테스트: 진짜 3-3(독립된 삼 2개) → 여전히 `'33'`, 진짜 4-4 → 여전히 `'44'`, 단순 삼 하나 → `null`, 장목 → `'장목'` — 전부 정상
+- 서버(`server/forbidden.js`)·클라이언트(`client/src/utils/forbidden.js`) 양쪽 동일 검증
+- `vite build` 통과
+
+### 교훈
+`_hasFour`와 `_hasOpenThree`를 4방향에 대해 독립적으로 돌리면서 "한 방향이 사이면서 동시에 삼으로도 보일 수 있다"는 걸 놓쳤던 게 원인 — 두 함수 각각은 자기 역할(사 판정, 삼 판정)에 대해 개별적으로는 맞게 동작했지만, 그 결과를 합산하는 상위 로직이 "사와 삼은 서로 다른 방향에서 나와야 한다"는 렌주룰의 전제를 명시하지 않고 있었음. 개별 함수 단위 테스트만으로는 못 잡고, 실제 대국에서 나온 국면을 재현해서야 발견됨 — 사용자 제보(스크린샷)가 결정적이었음.
+
+### 관련 파일
+- `client/src/utils/forbidden.js`, `server/forbidden.js` — `checkForbidden`에 `fourDirs` 추적 및 삼 집계 시 제외 로직 추가
