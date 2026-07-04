@@ -23,7 +23,8 @@
 14. **오프닝북(Yixin 질의 기반) 추가 + 8방향 전체 커버** (`2888c77`·`0c5b115`·`229fad1`, 2026-07-04) — 로컬 Yixin에게 BOARD 명령으로 초반 8개 라인(`getOpeningMove`가 실제 고를 수 있는 상하좌우+대각선 전부)을 직접 질의해 백의 4/6수째 응수 16개를 확보, `client/src/utils/openingBook.js`로 분리해 `getAIMove`에 연결. 처음엔 대각선 4개만 만들었는데, `getOpeningMove`가 대각선만 쓴다고 잘못 기억해서 생긴 착오였음(그 제한은 이전에 무효 판정으로 되돌려진 변경) — 실제로는 8방향 전부 쓰이는 걸 발견해 직교 4개도 추가 생성. 이후 `aiPlayer===2`(백) 체크 누락도 방어적으로 수정. 아래 "오프닝북 추가 (2026-07-04)" 참고
 15. **사삼(4-3)을 삼삼(3-3)으로 오판정하는 금수 버그 수정** (`1e14c22`, 2026-07-04) — 사용자가 실전 스크린샷으로 제보. `checkForbidden`의 삼 집계 루프가 이미 사(四)로 판정된 방향을 별도의 삼으로 중복 카운트해 허용되는 4-3을 금지되는 3-3으로 오판정하던 버그. `client/src/utils/forbidden.js`·`server/forbidden.js` 양쪽 수정. `docs/TROUBLESHOOTING.md` #11 참고
 16. **AI 대전 흑/백 선택 기능 + AI 자기 금수 회피** (`be8f9ec`, 2026-07-04) — 로비에서 사람이 흑/백을 고를 수 있게 추가, `Game.jsx`의 "사람=흑/AI=백" 하드코딩을 `humanPlayer`/`aiPlayer`로 일반화. AI가 흑을 맡을 수 있게 되면서 `aiEngine.js`에 자기 금수 회피 로직 신규 추가. 일반화 과정에서 승리 메시지 표시 한 곳(`gameOver.winner === 1` 하드코딩)을 놓쳐 사용자 제보로 발견·수정(`docs/TROUBLESHOOTING.md` #12). 10판 자가대국(흑vs백)으로 검증: 흑 6승/백 3승/무1, 금수로 인한 패배 0건. 아래 "AI 대전 흑/백 선택 기능 (2026-07-04)" 참고
-17. **오프닝북에 RIF 공인 정석(★★★ 등급) 추가 + 8방향·양쪽 색 전체 확장** (미커밋, 2026-07-05) — RenLib(`AllRenjuOpenings.lib`) 바이너리 파싱을 시도했으나 파일 앞부분이 실제 기보가 아니라 GUI 메뉴 구조로 밝혀져 중단, 대신 RIF 공식 문서("Renju For Beginners" PDF)와 Wikipedia 공식 다이어그램을 교차 검증해 26개 정석의 흑3 정확한 좌표·등급을 확보. 흑에게 가장 유리한(★★★) 8개 라인(D1,D4,D7,D11,I3,I4,I7,I12)을 로컬 Yixin으로 5수씩 이어붙인 뒤(`tools/query-yixin-line.mjs`), 렌주 규칙 자체의 회전 대칭을 이용해 8방향 전부로 확장하고 흑 차례 항목까지 함께 추출(`tools/generate_book_symmetry.mjs`) — `openingBook.js` 총 168개 항목(기존 16+신규 152), `aiEngine.js`의 북 조회를 색 무관 조회로 일반화. 아래 "RIF 정석 기반 오프닝북 확장 (2026-07-05)" 참고
+17. **오프닝북에 RIF 공인 정석(★★★ 등급) 추가 + 8방향·양쪽 색 전체 확장** (`e1ac742`, 2026-07-05) — RenLib(`AllRenjuOpenings.lib`) 바이너리 파싱을 시도했으나 파일 앞부분이 실제 기보가 아니라 GUI 메뉴 구조로 밝혀져 중단, 대신 RIF 공식 문서("Renju For Beginners" PDF)와 Wikipedia 공식 다이어그램을 교차 검증해 26개 정석의 흑3 정확한 좌표·등급을 확보. 흑에게 가장 유리한(★★★) 8개 라인(D1,D4,D7,D11,I3,I4,I7,I12)을 로컬 Yixin으로 5수씩 이어붙인 뒤(`tools/query-yixin-line.mjs`), 렌주 규칙 자체의 회전 대칭을 이용해 8방향 전부로 확장하고 흑 차례 항목까지 함께 추출(`tools/generate_book_symmetry.mjs`) — `openingBook.js` 총 168개 항목(기존 16+신규 152), `aiEngine.js`의 북 조회를 색 무관 조회로 일반화. 아래 "RIF 정석 기반 오프닝북 확장 (2026-07-05)" 참고
+18. **초반 희소 국면에서 AI가 고립된 자리에 착수하는 문제 수정** (미커밋, 2026-07-05) — 사용자가 실전 스크린샷으로 제보("이 4수는 차선도 아니다"). depth별 점수를 추적해 미니맥스 지평선 효과(홀짝 진동) + 돌이 적을 때 후보 생성 반경(2)이 너무 넓어 매 노드가 20-way branching이 되는 구조적 원인을 규명. `getCandidates`에 `range` 매개변수를 추가해 돌 8개 미만(`SPARSE_STONE_THRESHOLD`)이면 반경을 1로 좁혀 같은 시간에 훨씬 깊이 탐색하도록 수정(같은 국면에서 depth7 도달 시간이 12초→1초로 단축). 부가로 루트 완전 동점 시 기존 돌에 가까운 쪽을 우선하는 타이브레이크(`nearestStoneDistance`)도 추가. `docs/TROUBLESHOOTING.md` #13 참고
 
 ---
 
@@ -310,6 +311,7 @@ VCT, 시간예산 2배, 패턴 평가함수, 탐색기반 방어, 위치평가, 
 - [ ]  ~~Killer Move / History Heuristic 후보 정렬~~ / ~~PVS(Principal Variation Search)~~ — 3단계, 2026-07-03 시도 후 되돌림. 이 엔진은 `scoreCell`이 이미 강한 전술 신호라 타이브레이킹 여지가 적고, 두 기법의 노드당 오버헤드가 이득보다 커서 자가대국에서 순손실 확인 (`docs/TROUBLESHOOTING.md` #8)
 - [ ] ~~VCT(사·삼 함께 고려하는 확장 위협 탐색)~~ — 2026-07-03·07-04 두 번 시도 후 되돌림, 둘 다 Yixin 벤치마크 무효
 - [x] 금수/장목 활용 (2026-07-04 완료 — `searchVCF`/`hasImmediateWin`/`findCriticalDefenseCells`에 `checkForbidden` 반영. 격리 테스트로 정확성 확인, Yixin 벤치마크는 발동 조건이 드물어 무변화지만 다운사이드 없어 채택. "렌주 금수/장목 활용 적용" 절 참고)
+- [x] 초반 희소 국면 후보 생성 반경 축소 (2026-07-05 완료 — 돌 8개 미만이면 `getCandidates` 반경을 2→1로 좁혀 지평선 효과로 인한 고립 수 문제 해소. `docs/TROUBLESHOOTING.md` #13 참고)
 - [ ] 난이도별 depth/시간예산 조절 기능 (지금은 단일 최강 난이도만 존재)
 - [ ] WASM 컴파일로 순수 속도 향상 — 지금까지 테스트한 배수(2~40배)에서 속도가 승률에 안 먹혔지만 WASM은 자릿수가 다른 속도라 완전 배제는 이름. 기대치는 낮게 잡을 것
 

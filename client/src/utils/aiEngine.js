@@ -94,9 +94,8 @@ function scoreCell(board, row, col, player) {
 // 탐색 트리 내부(negamax)에서 매 노드 착수마다 갱신되는 bbox를 넘겨받아 쓴다
 const FULL_BBOX = { minR: 0, maxR: BOARD_SIZE - 1, minC: 0, maxC: BOARD_SIZE - 1 }
 
-function getCandidates(board, bbox = FULL_BBOX) {
+function getCandidates(board, bbox = FULL_BBOX, range = 2) {
   const candidates = new Set()
-  const range = 2
   const rLo = Math.max(0, bbox.minR - range)
   const rHi = Math.min(BOARD_SIZE - 1, bbox.maxR + range)
   const cLo = Math.max(0, bbox.minC - range)
@@ -379,6 +378,9 @@ const TT_UPPER = 2
 const MAX_CANDIDATES_PER_NODE = 20
 const TIME_BUDGET_MS = 2000
 const MAX_SEARCH_DEPTH = 12
+// 이 개수 미만으로 돌이 놓인 국면(대략 오프닝 단계)에서는 후보 생성 반경을 2에서
+// 1로 좁힌다 — iterativeDeepeningSearch 주석 참고
+const SPARSE_STONE_THRESHOLD = 8
 
 // 5칸 윈도우 안의 (내 돌 개수)별 가중치. 상대 돌이 섞인 윈도우는 위협이 아니므로 0.
 // 윈도우를 보드 전체에서 "한 번씩만" 세기 때문에, 기존 evaluate처럼 돌 개수만큼
@@ -506,7 +508,8 @@ function orderCandidates(board, candidates, side, ttMove, forcedCells) {
 // deadline: Date.now() 기준 탐색 종료 시각 — 넘으면 그 지점에서 정적 평가로 대체
 // bbox: 지금까지 놓인 돌의 바운딩박스(후보 생성 범위 축소용, 착수마다 expandBBox로 갱신)
 // state: 증분 평가 상태(착수·취소마다 applyStoneDelta로 함께 갱신)
-function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox, state) {
+// range: 후보 생성 반경(getCandidates에 그대로 전달, 초반 희소 국면 최적화용 — 아래 rootSearch 주석 참고)
+function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox, state, range) {
   const alphaOrig = alpha
   const entry = tt.get(hash)
   if (entry && entry.depth >= depth) {
@@ -521,7 +524,7 @@ function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox, stat
   }
 
   const opponent = side === 1 ? 2 : 1
-  const candidates = orderCandidates(board, getCandidates(board, bbox), side, entry?.bestMove)
+  const candidates = orderCandidates(board, getCandidates(board, bbox, range), side, entry?.bestMove)
 
   let best = -Infinity
   let bestMove = null
@@ -539,7 +542,7 @@ function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox, stat
     }
     const childHash = hash ^ ZOBRIST[row][col][side]
     const childBBox = expandBBox(bbox, row, col)
-    const val = -negamax(board, depth - 1, -beta, -alpha, opponent, childHash, tt, deadline, childBBox, state)
+    const val = -negamax(board, depth - 1, -beta, -alpha, opponent, childHash, tt, deadline, childBBox, state, range)
     board[row][col] = 0
     applyStoneDelta(state, idx, side, -1)
 
@@ -558,7 +561,7 @@ function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox, stat
 
 // 루트에서 후보 하나씩 negamax(상대 관점)를 호출해 최선의 수를 찾는다.
 // deadline을 넘기면 이번 depth는 미완료로 처리해 호출부가 이전 depth 결과를 유지하게 한다.
-function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox, forcedCells, state) {
+function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox, forcedCells, state, range) {
   const opponent = aiPlayer === 1 ? 2 : 1
   const ordered = orderCandidates(board, candidates, aiPlayer, tt.get(hash)?.bestMove, forcedCells)
 
@@ -578,7 +581,7 @@ function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox
     }
     const childHash = hash ^ ZOBRIST[row][col][aiPlayer]
     const childBBox = expandBBox(bbox, row, col)
-    const val = -negamax(board, depth - 1, -Infinity, -alpha, opponent, childHash, tt, deadline, childBBox, state)
+    const val = -negamax(board, depth - 1, -Infinity, -alpha, opponent, childHash, tt, deadline, childBBox, state, range)
     board[row][col] = 0
     applyStoneDelta(state, idx, aiPlayer, -1)
 
@@ -605,17 +608,30 @@ function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox
 // 끝까지 완료된 depth의 결과만 채택한다 (도중에 시간이 끝난 depth의 부분 결과는 버림).
 // Transposition Table을 depth 사이에서 재사용해 얕은 depth에서 찾은 최선 수가
 // 다음 depth의 탐색 순서를 앞당겨준다.
+// range: 후보 생성 반경 — 돌이 적은 초반엔 2로 두면 노드당 후보가 너무 많아져(반경 2 안에
+// 빈 칸이 넘쳐남) MAX_CANDIDATES_PER_NODE(20)에 항상 꽉 채워 걸리고, 그 결과 매 노드가
+// 20-way branching이 되어 실질적으로 도달 가능한 깊이가 급격히 얕아진다. 이 상태에서
+// 반복심화가 시간 내에 끝낸 마지막 depth가 하필 미니맥스 특유의 홀짝 진동(depth가 짝수면
+// "상대가 마지막에 둔" 시점에서 끝나 비관적으로, 홀수면 낙관적으로 보이는 현상) 중
+// 비관적인 짝수 depth였을 때, 실제로는 한 수만 더 보면 뒤집히는 결과를 그대로 채택해버려
+// 상대 돌과 전혀 무관한 자리를 고르는 문제가 실전에서 확인됐다(2026-07-05,
+// docs/TROUBLESHOOTING.md 참고). range=1로 줄이면 초반엔 후보 수가 자연히
+// MAX_CANDIDATES_PER_NODE 밑으로 내려가 같은 시간에 훨씬 깊이(예: depth 6→7) 도달해
+// 진동을 지나치고 안정된 결과를 얻는다. 직접인접(반경 1)은 사삼 등 실제 위협의 응수
+// 지점을 항상 포함하므로(위협 응수는 항상 형태의 끝에 바로 붙는 자리) 이 시점엔 전술적
+// 손실이 없다 — 아직 위협이랄 게 없는 돌 적은 국면에서만 적용되기 때문.
 function iterativeDeepeningSearch(board, candidates, aiPlayer, timeBudgetMs, forcedCells) {
   const deadline = Date.now() + timeBudgetMs
   const tt = new Map()
   const rootHash = computeHash(board)
   const rootBBox = computeBBox(board)
   const state = createEvalState(board)
+  const range = countStones(board) < SPARSE_STONE_THRESHOLD ? 1 : 2
 
   let overallBest = (forcedCells && forcedCells[0]) || candidates[0]
   for (let depth = 1; depth <= MAX_SEARCH_DEPTH; depth++) {
     if (Date.now() > deadline) break
-    const result = rootSearch(board, candidates, depth, aiPlayer, rootHash, tt, deadline, rootBBox, forcedCells, state)
+    const result = rootSearch(board, candidates, depth, aiPlayer, rootHash, tt, deadline, rootBBox, forcedCells, state, range)
     if (!result.complete || !result.move) break
     overallBest = result.move
     if (result.score >= WIN_SCORE) break // 확정 승리 수순을 찾았으면 더 깊이 볼 필요 없음
@@ -635,7 +651,10 @@ export function getAIMove(board, aiPlayer) {
   // 필터링된 목록만 보게 해서 최종 선택이 금수가 될 수 없도록 한다. negamax 재귀
   // 내부까지는 필터링하지 않음(매 노드 checkForbidden 호출은 백 전용일 때도 항상
   // 도는 성능 비용이라 기존 탐색 속도를 해칠 위험 — 루트에서 반환하는 수만 방어)
-  const rawCandidates = getCandidates(board)
+  // range: 돌이 적은 초반엔 1로 좁힘(iterativeDeepeningSearch 주석 참고) — 여기서 만든
+  // candidates가 그대로 탐색 루트 후보로도 쓰이므로 재귀 쪽과 반경을 맞춰야 한다
+  const rootRange = countStones(board) < SPARSE_STONE_THRESHOLD ? 1 : 2
+  const rawCandidates = getCandidates(board, FULL_BBOX, rootRange)
   const forbiddenFiltered = aiPlayer === 1
     ? rawCandidates.filter(({ row, col }) => checkForbidden(board, row, col) === null)
     : rawCandidates
