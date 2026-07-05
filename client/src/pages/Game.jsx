@@ -186,13 +186,7 @@ export default function Game({ config, userId, onLeave }) {
         // 금수를 두면 사람이 금수를 뒀을 때와 동일하게 즉시 패배 처리한다
         const forbiddenType = aiPlayer === 1 ? checkForbidden(b.map(r => [...r]), move.row, move.col) : null
         if (forbiddenType) {
-          const bb = b.map(r => [...r])
-          bb[move.row][move.col] = 1
-          setBoard(bb)
-          setLastMove({ row: move.row, col: move.col, player: 1 })
-          clearInterval(timerRef.current)
-          setStatus('ended')
-          setGameOver({ winner: humanPlayer, reason: 'forbidden', forbiddenType, forbiddenMove: { row: move.row, col: move.col } })
+          applyForbiddenLoss(b, move.row, move.col, humanPlayer, forbiddenType)
           return
         }
 
@@ -208,6 +202,19 @@ export default function Game({ config, userId, onLeave }) {
       clearTimeout(timeout)
     }
   }, [currentTurn, status, isOnline, aiPlayer, humanPlayer])
+
+  // 금수 패배 처리(AI 모드 전용) — 흑이 금수를 두면 그 자리에 착수는 반영하되
+  // 즉시 상대 승리로 게임을 끝낸다. 누가 금수를 뒀는지(사람 vs AI)에 따라 승자만
+  // 다르고 나머지 처리(보드 갱신·타이머 정지·게임오버 표시)는 동일해 한 곳으로 모음
+  function applyForbiddenLoss(sourceBoard, row, col, winner, forbiddenType) {
+    const b = sourceBoard.map(r => [...r])
+    b[row][col] = 1
+    setBoard(b)
+    setLastMove({ row, col, player: 1 })
+    clearInterval(timerRef.current)
+    setStatus('ended')
+    setGameOver({ winner, reason: 'forbidden', forbiddenType, forbiddenMove: { row, col } })
+  }
 
   // ─── 돌 놓기 ────────────────────────────────────────────────────
   function handleLocalMove(row, col, currentBoard) {
@@ -274,13 +281,7 @@ export default function Game({ config, userId, onLeave }) {
         // ref로 항상 최신 forbiddenCells 참조 (클로저 stale 방지)
         const forbiddenHit = forbiddenCellsRef.current.find(f => f.row === row && f.col === col)
         if (forbiddenHit) {
-          const b = board.map(r => [...r])
-          b[row][col] = 1
-          setBoard(b)
-          setLastMove({ row, col, player: 1 })
-          clearInterval(timerRef.current)
-          setStatus('ended')
-          setGameOver({ winner: aiPlayer, reason: 'forbidden', forbiddenType: forbiddenHit.type, forbiddenMove: { row, col } })
+          applyForbiddenLoss(board, row, col, aiPlayer, forbiddenHit.type)
           return
         }
       }

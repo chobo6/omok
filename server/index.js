@@ -84,15 +84,24 @@ function startTimer(roomId) {
     io.to(roomId).emit('timer:tick', { socketId: currentId, timeLeft: r.timers[currentId] })
 
     if (r.timers[currentId] <= 0) {
-      clearInterval(r.timerInterval)
-      r.status = 'ended'
       const winnerIdx = r.currentTurn === 1 ? 1 : 0
       const winnerId = r.players[winnerIdx]
-      emitRoomState(roomId)
-      io.to(roomId).emit('game:over', { winner: winnerIdx + 1, winnerId, reason: 'timeout' })
-      applyRankedRating(roomId, winnerIdx + 1)
+      endGame(roomId, { winner: winnerIdx + 1, winnerId, reason: 'timeout' })
     }
   }, 1000)
+}
+
+// 게임 종료 공통 처리(타이머 정지·상태 갱신·room:state/game:over 브로드캐스트·레이팅 반영).
+// gameOverPayload는 그대로 'game:over' 이벤트로 나가므로 winner를 반드시 포함해야 함
+// (applyRankedRating이 승패 판정에 그대로 사용, draw는 winner:0)
+function endGame(roomId, gameOverPayload) {
+  const room = rooms.get(roomId)
+  if (!room) return
+  clearInterval(room.timerInterval)
+  room.status = 'ended'
+  emitRoomState(roomId)
+  io.to(roomId).emit('game:over', gameOverPayload)
+  applyRankedRating(roomId, gameOverPayload.winner)
 }
 
 function applyRankedRating(roomId, winnerNumber) {
@@ -259,14 +268,10 @@ io.on('connection', (socket) => {
       if (forbidden) {
         room.board[row][col] = 1
         room.lastMove = { row, col, player: 1 }
-        clearInterval(room.timerInterval)
-        room.status = 'ended'
-        emitRoomState(roomId)
-        io.to(roomId).emit('game:over', {
+        endGame(roomId, {
           winner: 2, winnerId: room.players[1],
           reason: 'forbidden', forbiddenType: forbidden, forbiddenMove: { row, col },
         })
-        applyRankedRating(roomId, 2)
         return
       }
     }
@@ -275,19 +280,11 @@ io.on('connection', (socket) => {
     room.lastMove = { row, col, player: playerNumber }
 
     if (checkWin(room.board, row, col, playerNumber)) {
-      clearInterval(room.timerInterval)
-      room.status = 'ended'
-      emitRoomState(roomId)
-      io.to(roomId).emit('game:over', { winner: playerNumber, winnerId: socket.id, reason: 'win', winMove: { row, col } })
-      applyRankedRating(roomId, playerNumber)
+      endGame(roomId, { winner: playerNumber, winnerId: socket.id, reason: 'win', winMove: { row, col } })
       return
     }
     if (isBoardFull(room.board)) {
-      clearInterval(room.timerInterval)
-      room.status = 'ended'
-      emitRoomState(roomId)
-      io.to(roomId).emit('game:over', { winner: 0, reason: 'draw' })
-      applyRankedRating(roomId, 0)
+      endGame(roomId, { winner: 0, reason: 'draw' })
       return
     }
 
@@ -340,14 +337,10 @@ io.on('connection', (socket) => {
     if (!found) return
     const { roomId, room } = found
     if (room.status !== 'playing') return
-    clearInterval(room.timerInterval)
-    room.status = 'ended'
     const loserIdx = room.players.indexOf(socket.id)
     const winnerIdx = loserIdx === 0 ? 1 : 0
     const winnerId = room.players[winnerIdx]
-    emitRoomState(roomId)
-    io.to(roomId).emit('game:over', { winner: winnerIdx + 1, winnerId, reason: 'surrender' })
-    applyRankedRating(roomId, winnerIdx + 1)
+    endGame(roomId, { winner: winnerIdx + 1, winnerId, reason: 'surrender' })
   })
 
   // ── 연결 끊김 ────────────────────────────────────────────────────────────
@@ -369,12 +362,12 @@ io.on('connection', (socket) => {
       return
     }
     if (room.status === 'playing') {
-      room.status = 'ended'
       const remaining = room.players.find(id => id !== socket.id)
-      const winnerNumber = remaining ? room.players.indexOf(remaining) + 1 : 0
       if (remaining) {
-        io.to(roomId).emit('game:over', { winner: winnerNumber, winnerId: remaining, reason: 'disconnect' })
-        applyRankedRating(roomId, winnerNumber)
+        const winnerNumber = room.players.indexOf(remaining) + 1
+        endGame(roomId, { winner: winnerNumber, winnerId: remaining, reason: 'disconnect' })
+      } else {
+        room.status = 'ended'
       }
     }
     rooms.delete(roomId)
