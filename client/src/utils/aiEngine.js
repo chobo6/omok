@@ -344,15 +344,33 @@ function searchVCF(board, player, depth) {
   return null
 }
 
+// 고정 시드 PRNG(mulberry32) — Zobrist 표에 쓸 "무작위처럼 잘 분산된" 값이 필요할 뿐
+// 진짜 무작위일 필요는 없다. Math.random()을 쓰면 모듈을 새로 불러올 때마다(=매 프로세스
+// 시작마다) 표 값이 달라져서, 같은 국면도 실행마다 해시가 달라지고 그로 인한 Zobrist
+// 충돌 패턴도 달라진다 — persistentTT가 게임 전체에 걸쳐 훨씬 많은 항목을 쌓게 되면서
+// (아래 TT 재사용 참고) 이 충돌 하나가 그 시점부터 완전히 다른 대국으로 갈라지는 원인이
+// 될 수 있음을 tools/self-play.mjs --node-budget 결정론 검증 중 실측으로 확인했다.
+// 고정 시드로 바꾸면 모듈을 몇 번을 다시 불러와도 항상 같은 표가 나와 이 문제가 사라진다.
+function createSeededRandom(seed) {
+  let s = seed >>> 0
+  return function () {
+    s |= 0; s = (s + 0x6D2B79F5) | 0
+    let t = Math.imul(s ^ (s >>> 15), 1 | s)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
 // ---- Zobrist 해싱 (Transposition Table 키 계산용) ----
 // board[r][c] 값(1 또는 2)별로 서로 다른 난수를 배정해두고, 착수/취소마다
 // 해당 칸의 난수를 XOR하면 매번 보드 전체를 스캔하지 않고도 해시를 증분 갱신할 수 있다.
 function createZobristTable() {
+  const random = createSeededRandom(0x9e3779b9)
   const table = []
   for (let r = 0; r < BOARD_SIZE; r++) {
     const row = []
     for (let c = 0; c < BOARD_SIZE; c++) {
-      row.push([0, Math.floor(Math.random() * 0x7fffffff), Math.floor(Math.random() * 0x7fffffff)])
+      row.push([0, Math.floor(random() * 0x7fffffff), Math.floor(random() * 0x7fffffff)])
     }
     table.push(row)
   }
@@ -381,6 +399,48 @@ const MAX_SEARCH_DEPTH = 12
 // 이 개수 미만으로 돌이 놓인 국면(대략 오프닝 단계)에서는 후보 생성 반경을 2에서
 // 1로 좁힌다 — iterativeDeepeningSearch 주석 참고
 const SPARSE_STONE_THRESHOLD = 8
+
+// 탐색 종료조건을 "시간"과 "노드 수" 중 하나로 통일해서 다루기 위한 래퍼.
+// negamax는 매 호출마다 recordNode()만 부르고, depth===0 체크와 함께 exceeded()로
+// 종료 여부를 판단한다 — 시간이든 노드 수든 negamax/rootSearch 쪽 코드는 몰라도 됨.
+// 프로덕션(aiWorker.js)은 기기 성능차에 그대로 적응해야 하는 사용자 응답성이 핵심이라
+// 항상 시간 기준(createTimeBudget)을 쓴다. 노드 수 기준(createNodeBudget)은 실행 시점에
+// 따라 결과가 흔들리는 문제(docs/TROUBLESHOOTING.md #9, #15) 없이 자가대국을 결정론적으로
+// 비교하기 위한 테스트 전용 옵션 — tools/self-play.mjs --node-budget 참고.
+function createTimeBudget(ms) {
+  const deadline = Date.now() + ms
+  return {
+    recordNode() {},
+    exceeded: () => Date.now() > deadline,
+  }
+}
+function createNodeBudget(limit) {
+  let count = 0
+  return {
+    recordNode() { count++ },
+    exceeded: () => count > limit,
+  }
+}
+
+// getAIMove 호출 사이에도 유지되는 Transposition Table. Game.jsx가 AI 대전 중
+// Web Worker(aiWorker.js)를 게임당 한 번만 만들어 계속 재사용하므로(모듈 상태가
+// 자연히 이어짐), 매번 새로 비우지 않고 이어 쓰면 "내 수 → 상대 응수 → 내 다음 수"
+// 사이에 겹치는 하위 트리 탐색 결과를 그대로 활용해 같은 시간에 더 깊이 볼 수 있다.
+// 무한정 커지는 것만 막아두는 안전망(LRU 등 정교한 정책 없이 넘으면 통째로 비움).
+// 프로덕션은 게임당 워커 하나 = TT 하나라 문제 없지만, 자가대국 도구처럼 여러 판을
+// 한 프로세스(=같은 모듈 인스턴스)에서 이어 돌리면 앞 판의 잔여 TT가 뒤 판에 새어들어
+// (특히 앞 판에 getOpeningMove의 진짜 Math.random()이 낀 경우) 재실행할 때마다 결과가
+// 달라지는 문제가 실측으로 확인됐다 — resetSearchState()로 매 게임 시작 전 비워야
+// 게임 하나하나가 프로덕션과 동일한 "깨끗한 워커" 조건에서 결정론적으로 재현된다
+// (tools/self-play.mjs가 각 대국 전에 호출).
+const TT_MAX_ENTRIES = 1_000_000
+let persistentTT = new Map()
+
+// 자가대국 등 한 프로세스에서 여러 판을 이어 돌릴 때, 판 사이에 TT를 비워
+// 프로덕션의 "게임당 새 워커" 조건과 동일하게 맞추기 위한 테스트 전용 함수.
+export function resetSearchState() {
+  persistentTT = new Map()
+}
 
 // 5칸 윈도우 안의 (내 돌 개수)별 가중치. 상대 돌이 섞인 윈도우는 위협이 아니므로 0.
 // 윈도우를 보드 전체에서 "한 번씩만" 세기 때문에, 기존 evaluate처럼 돌 개수만큼
@@ -504,12 +564,13 @@ function orderCandidates(board, candidates, side, ttMove, forcedCells) {
 }
 
 // side 관점 negamax. 반환값이 양수면 side(지금 둘 차례)에게 유리.
-// tt: 이번 getAIMove 호출 한 번 동안만 쓰는 Map 기반 Transposition Table
-// deadline: Date.now() 기준 탐색 종료 시각 — 넘으면 그 지점에서 정적 평가로 대체
+// tt: 세션(게임) 동안 이어 쓰는 Map 기반 Transposition Table(persistentTT, 위 주석 참고)
+// budget: 탐색 종료조건(시간 또는 노드 수) — exceeded()면 그 지점에서 정적 평가로 대체
 // bbox: 지금까지 놓인 돌의 바운딩박스(후보 생성 범위 축소용, 착수마다 expandBBox로 갱신)
 // state: 증분 평가 상태(착수·취소마다 applyStoneDelta로 함께 갱신)
 // range: 후보 생성 반경(getCandidates에 그대로 전달, 초반 희소 국면 최적화용 — 아래 rootSearch 주석 참고)
-function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox, state, range) {
+function negamax(board, depth, alpha, beta, side, hash, tt, budget, bbox, state, range) {
+  budget.recordNode()
   const alphaOrig = alpha
   const entry = tt.get(hash)
   if (entry && entry.depth >= depth) {
@@ -519,7 +580,7 @@ function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox, stat
     if (alpha >= beta) return entry.value
   }
 
-  if (depth === 0 || Date.now() > deadline) {
+  if (depth === 0 || budget.exceeded()) {
     return evaluate(state, side)
   }
 
@@ -542,7 +603,7 @@ function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox, stat
     }
     const childHash = hash ^ ZOBRIST[row][col][side]
     const childBBox = expandBBox(bbox, row, col)
-    const val = -negamax(board, depth - 1, -beta, -alpha, opponent, childHash, tt, deadline, childBBox, state, range)
+    const val = -negamax(board, depth - 1, -beta, -alpha, opponent, childHash, tt, budget, childBBox, state, range)
     board[row][col] = 0
     applyStoneDelta(state, idx, side, -1)
 
@@ -560,8 +621,8 @@ function negamax(board, depth, alpha, beta, side, hash, tt, deadline, bbox, stat
 }
 
 // 루트에서 후보 하나씩 negamax(상대 관점)를 호출해 최선의 수를 찾는다.
-// deadline을 넘기면 이번 depth는 미완료로 처리해 호출부가 이전 depth 결과를 유지하게 한다.
-function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox, forcedCells, state, range) {
+// budget이 exceeded되면 이번 depth는 미완료로 처리해 호출부가 이전 depth 결과를 유지하게 한다.
+function rootSearch(board, candidates, depth, aiPlayer, hash, tt, budget, bbox, forcedCells, state, range) {
   const opponent = aiPlayer === 1 ? 2 : 1
   const ordered = orderCandidates(board, candidates, aiPlayer, tt.get(hash)?.bestMove, forcedCells)
 
@@ -581,11 +642,11 @@ function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox
     }
     const childHash = hash ^ ZOBRIST[row][col][aiPlayer]
     const childBBox = expandBBox(bbox, row, col)
-    const val = -negamax(board, depth - 1, -Infinity, -alpha, opponent, childHash, tt, deadline, childBBox, state, range)
+    const val = -negamax(board, depth - 1, -Infinity, -alpha, opponent, childHash, tt, budget, childBBox, state, range)
     board[row][col] = 0
     applyStoneDelta(state, idx, aiPlayer, -1)
 
-    if (Date.now() > deadline) {
+    if (budget.exceeded()) {
       return { move: bestMove, score: bestScore, complete: false }
     }
 
@@ -620,9 +681,9 @@ function rootSearch(board, candidates, depth, aiPlayer, hash, tt, deadline, bbox
 // 진동을 지나치고 안정된 결과를 얻는다. 직접인접(반경 1)은 사삼 등 실제 위협의 응수
 // 지점을 항상 포함하므로(위협 응수는 항상 형태의 끝에 바로 붙는 자리) 이 시점엔 전술적
 // 손실이 없다 — 아직 위협이랄 게 없는 돌 적은 국면에서만 적용되기 때문.
-function iterativeDeepeningSearch(board, candidates, aiPlayer, timeBudgetMs, forcedCells) {
-  const deadline = Date.now() + timeBudgetMs
-  const tt = new Map()
+function iterativeDeepeningSearch(board, candidates, aiPlayer, budget, forcedCells) {
+  if (persistentTT.size > TT_MAX_ENTRIES) persistentTT = new Map()
+  const tt = persistentTT
   const rootHash = computeHash(board)
   const rootBBox = computeBBox(board)
   const state = createEvalState(board)
@@ -630,8 +691,8 @@ function iterativeDeepeningSearch(board, candidates, aiPlayer, timeBudgetMs, for
 
   let overallBest = (forcedCells && forcedCells[0]) || candidates[0]
   for (let depth = 1; depth <= MAX_SEARCH_DEPTH; depth++) {
-    if (Date.now() > deadline) break
-    const result = rootSearch(board, candidates, depth, aiPlayer, rootHash, tt, deadline, rootBBox, forcedCells, state, range)
+    if (budget.exceeded()) break
+    const result = rootSearch(board, candidates, depth, aiPlayer, rootHash, tt, budget, rootBBox, forcedCells, state, range)
     if (!result.complete || !result.move) break
     overallBest = result.move
     if (result.score >= WIN_SCORE) break // 확정 승리 수순을 찾았으면 더 깊이 볼 필요 없음
@@ -639,7 +700,9 @@ function iterativeDeepeningSearch(board, candidates, aiPlayer, timeBudgetMs, for
   return overallBest
 }
 
-export function getAIMove(board, aiPlayer) {
+// options.nodeBudget: 테스트/벤치마크 전용(tools/self-play.mjs --node-budget 참고).
+// 프로덕션(aiWorker.js)은 인자를 안 넘기므로 항상 기존과 동일한 시간 기준 예산을 쓴다.
+export function getAIMove(board, aiPlayer, options) {
   // 오프닝: 상대가 첫 수만 둔 상태면 3x3 반경 내 랜덤 응수
   if (countStones(board) === 1) {
     const opening = getOpeningMove(board)
@@ -707,5 +770,6 @@ export function getAIMove(board, aiPlayer) {
   const criticalCells = findCriticalDefenseCells(board, candidates, humanPlayer)
 
   // 반복심화 + Transposition Table 탐색 (시간 예산 TIME_BUDGET_MS 안에서 최대한 깊이)
-  return iterativeDeepeningSearch(board, candidates, aiPlayer, TIME_BUDGET_MS, criticalCells)
+  const budget = options?.nodeBudget ? createNodeBudget(options.nodeBudget) : createTimeBudget(TIME_BUDGET_MS)
+  return iterativeDeepeningSearch(board, candidates, aiPlayer, budget, criticalCells)
 }
