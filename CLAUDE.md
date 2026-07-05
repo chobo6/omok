@@ -35,7 +35,7 @@ npm run dev
 | `client/src/components/Board.jsx` | Canvas 오목판 렌더링, 금수 삼각형 표시 |
 | `client/src/utils/aiEngine.js` | Negamax + Alpha-Beta + 반복심화 + Transposition Table + VCF 위협 탐색 AI (증분 평가함수, 렌주 금수 활용) |
 | `client/src/utils/aiWorker.js` | aiEngine을 Web Worker에서 실행 (메인 스레드 블로킹 방지) |
-| `client/src/utils/openingBook.js` | 로컬 Yixin 질의로 얻은 초반 3~8수째 오프닝북(168개, 흑/백 양쪽), RIF 공인 정석(★★★ 등급)을 8방향 회전 확장 (국면 일치 시에만 사용) |
+| `client/src/utils/openingBook.js` | 로컬 Yixin 질의로 얻은 초반 3~8수째 오프닝북(228개, 흑/백 양쪽), RIF 공인 정석(화월·포월·은월·운월·우월 등 11개)을 8방향 회전 확장 (국면 일치 시에만 사용) |
 | `tools/bench-vs-yixin.mjs` | 로컬 Yixin 엔진 상대 AI 실력 검증 벤치마크 (개발용, pbrain 프로토콜) |
 | `client/src/utils/forbidden.js` | 렌주룰 금수 판정 ESM — 클라이언트에서 사용 |
 | `client/src/utils/userId.js` | localStorage 기반 익명 UUID 발급 (랭킹전 소켓 auth용) |

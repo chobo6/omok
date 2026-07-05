@@ -1,6 +1,12 @@
-// RIF(렌주 국제연맹) 공인 26개 정석 분류 중 최상위 등급(★★★) 8개 라인을
+// RIF(렌주 국제연맹) 공인 26개 정석 분류 중 흑에게 유리하다고 평가되는 라인들을
 // 로컬 Yixin에게 BOARD 명령으로 이어서 두게 해 각 라인의 4~8수째를 얻어내는 스크립트.
 // 사용법: node tools/query-yixin-line.mjs
+//
+// 처음 8개(D1,D4,D7,D11,I3,I4,I7,I12)는 Nosovsky·Sokolsky "Renju For Beginners"
+// (RIF 공식)의 ★★★ 등급. 뒤 3개(D6,I6,I9)는 사용자가 이름으로 지정한 우월/운월/은월 —
+// 한국 렌주 커뮤니티 자료(화월=D4·포월=I7과 교차검증됨, 둘 다 "흑 필승/흑 유리" 평가)
+// 기준으로 추가. 좌표는 Wikipedia Renju_opening_pattern 공식 다이어그램에서 읽은
+// 흑3 상대좌표를 그대로 사용(client/src/utils/openingBook.js 헤더 주석 참고).
 import { spawn } from 'node:child_process'
 
 const ENGINE_PATH = 'C:/Yixin/engine.exe'
@@ -8,16 +14,18 @@ const BOARD_SIZE = 15
 const TIME_BUDGET_MS = 1500
 const EXTRA_PLIES = 5 // 3수(흑1,백2,흑3) 이후 몇 수 더 얻을지
 
-// ★★★ 등급 8개 라인. black1=(7,7) 고정.
-// 각 항목: 이름, white2(직선/대각 방향), black3(정석을 결정하는 수)
+// black1=(7,7) 고정. 각 항목: 이름, white2(직선/대각 방향), black3(정석을 결정하는 수)
 const LINES = [
   { name: 'D1 Cold Star', white2: { row: 6, col: 7 }, black3: { row: 5, col: 7 } },
-  { name: 'D4 Flower', white2: { row: 6, col: 7 }, black3: { row: 6, col: 8 } },
+  { name: 'D4 Flower(화월)', white2: { row: 6, col: 7 }, black3: { row: 6, col: 8 } },
+  { name: 'D6 Uwol(우월)', white2: { row: 6, col: 7 }, black3: { row: 7, col: 8 } },
   { name: 'D7 Gold Star', white2: { row: 6, col: 7 }, black3: { row: 7, col: 9 } },
   { name: 'D11 Lucky Star', white2: { row: 6, col: 7 }, black3: { row: 9, col: 7 } },
   { name: 'I3 Constant', white2: { row: 6, col: 8 }, black3: { row: 7, col: 9 } },
   { name: 'I4 Water', white2: { row: 6, col: 8 }, black3: { row: 8, col: 9 } },
-  { name: 'I7 Bay', white2: { row: 6, col: 8 }, black3: { row: 8, col: 8 } },
+  { name: 'I6 Unwol(운월)', white2: { row: 6, col: 8 }, black3: { row: 7, col: 8 } },
+  { name: 'I7 Bay(포월)', white2: { row: 6, col: 8 }, black3: { row: 8, col: 8 } },
+  { name: 'I9 Eunwol(은월)', white2: { row: 6, col: 8 }, black3: { row: 8, col: 7 } },
   { name: 'I12 Glory', white2: { row: 6, col: 8 }, black3: { row: 9, col: 6 } },
 ]
 

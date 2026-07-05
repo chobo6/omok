@@ -15,6 +15,12 @@ const BASE_LINES = {
   I4: [[7,7,1],[6,8,2],[8,9,1],[6,7,2],[8,8,1],[9,9,2],[6,9,1],[7,10,2]],
   I7: [[7,7,1],[6,8,2],[8,8,1],[6,6,2],[7,9,1],[9,7,2],[6,9,1],[8,9,2]],
   I12: [[7,7,1],[6,8,2],[9,6,1],[7,8,2],[5,8,1],[6,7,2],[6,6,1],[8,8,2]],
+  // 2026-07-05 사용자 요청으로 추가(우월/운월/은월). query-yixin-line.mjs 재실행 결과 —
+  // Yixin 자체가 실행마다 약간 다른 응수를 줄 수 있어(비결정적) 기존 8개는 그대로 두고
+  // 이 3개만 새로 추가
+  D6: [[7,7,1],[6,7,2],[7,8,1],[7,9,2],[7,6,1],[7,5,2],[8,7,1],[6,5,2]],
+  I6: [[7,7,1],[6,8,2],[7,8,1],[7,6,2],[6,6,1],[8,8,2],[6,7,1],[8,9,2]],
+  I9: [[7,7,1],[6,8,2],[8,7,1],[9,7,2],[7,6,1],[6,5,2],[7,8,1],[7,9,2]],
 }
 
 // 중심(7,7) 기준 시계방향 90도 회전: (dr,dc) -> (dc,-dr)
@@ -50,41 +56,41 @@ for (const line of allLines) {
   }
 }
 
-// 같은 key에 서로 다른 move가 경합하면(흑3 선택지가 방향당 4개라 ply3에서 발생) 먼저 나온 것만 채택
-const seen = new Map()
-const conflicts = []
+// 같은 key에 서로 다른 move가 경합하면(흑3 선택지가 방향당 여러 개라 ply3에서 발생)
+// 하나만 골라 나머지를 버리지 않고, 전부 후보로 모아 lookupBook이 무작위로 고르게 한다
+// (openingBook.js의 moves 배열 참고) — 예전엔 "먼저 나온 것만 채택"이라 흑 오프닝이
+// 방향당 딱 하나로 고정되는 문제가 있었다(사용자 실전 관찰로 발견: 상하좌우는 항상
+// 한성D1, 대각선은 항상 항성I3만 나옴).
+const grouped = new Map() // key -> Map(moveKey -> {move, sources})
 for (const e of rawEntries) {
-  const existing = seen.get(e.key)
-  if (!existing) {
-    seen.set(e.key, e)
-  } else if (existing.move.row !== e.move.row || existing.move.col !== e.move.col) {
-    conflicts.push({ key: e.key, kept: existing, dropped: e })
-  }
-  // 완전히 동일한 key+move 중복은 조용히 무시(회전 대칭으로 우연히 같아진 경우 등)
+  const moveKey = `${e.move.row},${e.move.col}`
+  if (!grouped.has(e.key)) grouped.set(e.key, new Map())
+  const moves = grouped.get(e.key)
+  if (!moves.has(moveKey)) moves.set(moveKey, { move: e.move, sources: [] })
+  moves.get(moveKey).sources.push(`${e.source} ply${e.ply}`)
 }
 
-const finalEntries = [...seen.values()]
+const finalEntries = [...grouped.entries()].map(([key, moves]) => {
+  const entries = [...moves.values()]
+  return { key, moves: entries.map(m => m.move), sourcesLabel: entries.map(m => m.sources[0]).join(' / ') }
+})
 
-console.error(`총 원시 항목: ${rawEntries.length}, 충돌로 스킵: ${conflicts.length}, 최종: ${finalEntries.length}`)
-if (conflicts.length > 0) {
-  console.error('--- 충돌 상세 (ply3 흑 선택지 경합 예상) ---')
-  for (const c of conflicts) {
-    console.error(`  key=${c.key}\n    유지: ${c.kept.source} ply${c.kept.ply} -> (${c.kept.move.row},${c.kept.move.col})\n    스킵: ${c.dropped.source} ply${c.dropped.ply} -> (${c.dropped.move.row},${c.dropped.move.col})`)
-  }
-}
+const multiCount = finalEntries.filter(e => e.moves.length > 1).length
+console.error(`총 원시 항목: ${rawEntries.length}, 최종 키 개수: ${finalEntries.length}, 그중 후보 2개 이상(다양성 확보): ${multiCount}`)
 
-// 이미 놓인 자리에 재착수하는 항목이 있는지 안전 검사
+// 이미 놓인 자리에 재착수하는 후보가 있는지 안전 검사
 let selfCollision = 0
 for (const e of finalEntries) {
   const occupied = new Set(e.key.split('|').map(s => s.split(',').slice(0, 2).join(',')))
-  if (occupied.has(`${e.move.row},${e.move.col}`)) {
-    selfCollision++
-    console.error('자기충돌!', e)
+  for (const mv of e.moves) {
+    if (occupied.has(`${mv.row},${mv.col}`)) { selfCollision++; console.error('자기충돌!', e.key, mv) }
   }
 }
 console.error(`자기충돌(이미 놓인 자리): ${selfCollision}`)
 
-// openingBook.js에 붙여넣을 수 있는 형태로 출력 (플라이별로 정렬해 가독성 확보)
-finalEntries.sort((a, b) => a.ply - b.ply || a.source.localeCompare(b.source))
-const lines = finalEntries.map(e => `  { key: '${e.key}', move: { row: ${e.move.row}, col: ${e.move.col} } }, // ${e.source} ply${e.ply}`)
+// openingBook.js에 붙여넣을 수 있는 형태로 출력
+const lines = finalEntries.map(e => {
+  const movesStr = e.moves.map(mv => `{ row: ${mv.row}, col: ${mv.col} }`).join(', ')
+  return `  { key: '${e.key}', moves: [${movesStr}] }, // ${e.sourcesLabel}`
+})
 console.log(lines.join('\n'))

@@ -562,3 +562,27 @@ AI 대전 흑/백 선택 기능 추가 직후, 사용자가 백을 선택해 실
 - `client/src/utils/aiEngine.js` — `persistentTT`/`resetSearchState`, `createTimeBudget`/`createNodeBudget`, Zobrist 고정 시드, `negamax`/`rootSearch`/`iterativeDeepeningSearch`/`getAIMove` 관련 부분 수정
 - `tools/self-play.mjs` — 신규(정식 커밋된 자가대국 도구, `--node-budget` 지원)
 - `docs/superpowers/specs/2026-07-05-tt-reuse-node-budget-design.md` — 설계 문서
+
+---
+
+## #17 흑 AI 오프닝북이 방향당 정석 하나로 고정됨 (실전 6~7판 플레이로 발견)
+
+### 증상
+사용자가 흑 AI로 6~7판 둬보니, 백의 2수째가 상하좌우(직선) 방향이면 항상 한성(D1)만, 대각선 방향이면 항상 항성(I3)만 나옴 — 우월(D6)·화월(D4)·금성(D7)·서성(D11) 등 같은 방향에 걸린 나머지 정석들이 전혀 안 나왔음.
+
+### 원인
+`tools/generate_book_symmetry.mjs`의 흑 3수째(ply3, 흑1+백2만 놓인 국면) 항목 생성 로직이 "같은 key에 여러 정석의 후보가 경합하면 **먼저 나온 것만 채택하고 나머지는 스킵**"하는 방식이었음. `BASE_LINES` 객체에 D1이 D4/D6/D7/D11보다 먼저 선언돼 있어 항상 D1이 이겼고, I3가 I4/I6/I7/I9/I12보다 먼저라 항상 I3가 이겼다 — 코드가 의도한 대로 정확히 동작한 것이라 "버그"라기보단 **설계 결함**(다양성을 고려 안 한 dedup 정책)에 가까움.
+
+### 해결
+`OPENING_BOOK`의 각 항목을 `{ key, move }` 단일 후보에서 `{ key, moves: [...] }` 배열로 바꾸고, `lookupBook`이 여러 후보 중 하나를 무작위로 골라 반환하도록 수정. 생성 스크립트도 경합하는 후보를 버리지 않고 전부 `moves` 배열에 모으도록 변경. ply4 이후(백의 응수, 흑의 후속수)는 이미 특정 정석이 정해진 뒤라 여전히 후보가 1개뿐이라 결정론 그대로 유지됨 — 다양성 확보는 순수하게 ply3(정석 선택 지점) 8개 키에만 영향.
+
+### 검증
+- 228개 키 전부 유니크, round-trip 10회 반복 시도 모두 통과, 자기충돌 0건
+- 흑 차례 후보 124개 전부 `checkForbidden` 무위반
+- 위 방향 200회 시행 분포: 5개 후보가 36~44회로 고르게 분산 (다양성 확보 확인)
+- 흑 AI 실제 호출 5회 연속에서 서로 다른 정석 응수 확인
+- P0 회귀·`vite build` 통과, Yixin 벤치마크 회귀 없음(6패 동일)
+
+### 관련 파일
+- `client/src/utils/openingBook.js` — 데이터 구조를 `moves` 배열로 전환, `lookupBook`에 무작위 선택 추가
+- `tools/generate_book_symmetry.mjs` — dedup 로직을 "첫 번째만 채택"에서 "전부 그룹화"로 변경
