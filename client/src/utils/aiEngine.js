@@ -563,13 +563,23 @@ function orderCandidates(board, candidates, side, ttMove, forcedCells) {
     .slice(0, MAX_CANDIDATES_PER_NODE)
 }
 
+// 강제수 연장(forcing move extension)에 쓸 수 있는 "공짜 ply" 총 한도. 사(四)를 만드는
+// 수를 둘 때마다 depth를 깎지 않고 그대로 넘겨(아래 negamax 주석 참고) 강제수순이 depth
+// 예산에 밀려 도중에 끊기지 않게 하되, 이 한도가 없으면 사가 계속 이어지는 국면에서
+// 재귀가 사실상 무한정 깊어질 수 있으므로 VCF_MAX_DEPTH와 비슷한 크기로 상한을 둔다.
+const MAX_EXTENSIONS = 6
+
 // side 관점 negamax. 반환값이 양수면 side(지금 둘 차례)에게 유리.
 // tt: 세션(게임) 동안 이어 쓰는 Map 기반 Transposition Table(persistentTT, 위 주석 참고)
 // budget: 탐색 종료조건(시간 또는 노드 수) — exceeded()면 그 지점에서 정적 평가로 대체
 // bbox: 지금까지 놓인 돌의 바운딩박스(후보 생성 범위 축소용, 착수마다 expandBBox로 갱신)
 // state: 증분 평가 상태(착수·취소마다 applyStoneDelta로 함께 갱신)
 // range: 후보 생성 반경(getCandidates에 그대로 전달, 초반 희소 국면 최적화용 — 아래 rootSearch 주석 참고)
-function negamax(board, depth, alpha, beta, side, hash, tt, budget, bbox, state, range) {
+// extensions: 지금까지 이 수순에서 쓴 강제수 연장 횟수(루트에서 0으로 시작, MAX_EXTENSIONS 도달하면
+// 더 이상 연장하지 않고 일반적인 depth-1로 되돌아감) — 체스 엔진의 "체크 익스텐션"과 같은 발상을
+// 사(四)에 적용한 것: 위협을 만드는 수는 사실상 상대 응수가 하나뿐인 강제수이므로, 이 수만큼은
+// depth 예산을 소모하지 않게 해 지평선 효과(#13/#18/#19)로 강제수순 도중에 탐색이 끊기는 걸 줄인다.
+function negamax(board, depth, alpha, beta, side, hash, tt, budget, bbox, state, range, extensions) {
   budget.recordNode()
   const alphaOrig = alpha
   const entry = tt.get(hash)
@@ -601,9 +611,12 @@ function negamax(board, depth, alpha, beta, side, hash, tt, budget, bbox, state,
       tt.set(hash, { depth, value: val, bound: TT_EXACT, bestMove: { row, col } })
       return val
     }
+    const extend = extensions < MAX_EXTENSIONS && getFourThreats(board, row, col, side).length > 0
+    const childDepth = extend ? depth : depth - 1
+    const childExtensions = extend ? extensions + 1 : extensions
     const childHash = hash ^ ZOBRIST[row][col][side]
     const childBBox = expandBBox(bbox, row, col)
-    const val = -negamax(board, depth - 1, -beta, -alpha, opponent, childHash, tt, budget, childBBox, state, range)
+    const val = -negamax(board, childDepth, -beta, -alpha, opponent, childHash, tt, budget, childBBox, state, range, childExtensions)
     board[row][col] = 0
     applyStoneDelta(state, idx, side, -1)
 
@@ -640,9 +653,12 @@ function rootSearch(board, candidates, depth, aiPlayer, hash, tt, budget, bbox, 
       applyStoneDelta(state, idx, aiPlayer, -1)
       return { move: { row, col }, score: WIN_SCORE + depth, complete: true }
     }
+    const extend = getFourThreats(board, row, col, aiPlayer).length > 0
+    const childDepth = extend ? depth : depth - 1
+    const childExtensions = extend ? 1 : 0
     const childHash = hash ^ ZOBRIST[row][col][aiPlayer]
     const childBBox = expandBBox(bbox, row, col)
-    const val = -negamax(board, depth - 1, -Infinity, -alpha, opponent, childHash, tt, budget, childBBox, state, range)
+    const val = -negamax(board, childDepth, -Infinity, -alpha, opponent, childHash, tt, budget, childBBox, state, range, childExtensions)
     board[row][col] = 0
     applyStoneDelta(state, idx, aiPlayer, -1)
 
