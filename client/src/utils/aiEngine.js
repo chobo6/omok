@@ -244,8 +244,29 @@ function getFourThreats(board, row, col, player) {
   })
 }
 
+// player가 (row,col)에 착수했다고 가정한 보드에서(호출부가 이미 board[row][col]=player로
+// 놓아둔 상태여야 함), 사(四)가 성립하는 방향 수와 삼(三)이 성립하는 방향 수를 센다.
+// 사삼(43) 포크 판정에 씀 — scoreCell의 enemyFourDirs/enemyThreeDirs와 같은 방식이지만,
+// 그쪽은 후보 정렬 가산점(힌트)용이고 이건 강제 방어 승격(findCriticalDefenseCells) 판정용
+function countThreatDirections(board, row, col, player) {
+  let fourDirs = 0
+  let threeDirs = 0
+  for (const [dr, dc] of DIRECTIONS) {
+    const line = buildLine(board, row, col, dr, dc)
+    const { fourWindows, threeWindows } = analyzeDirection(line, player)
+    if (fourWindows >= 1) fourDirs++
+    else if (threeWindows >= 1) threeDirs++
+  }
+  return { fourDirs, threeDirs }
+}
+
 // candidates 중 opponent가 두면 (a) 즉시 5목 승리하거나 (b) 완성 지점이 2곳 이상인
-// 사(四, 열린사/더블사)를 만들어 다음 수에 한 곳만 막아선 못 막는 자리를 모두 반환.
+// 사(四, 열린사/더블사)를 만들어 다음 수에 한 곳만 막아선 못 막는 자리이거나 (c) 사와 삼을
+// 서로 다른 방향에 동시에 만드는(사삼, 43 포크) 자리를 모두 반환.
+// (c)는 더블사만큼 무조건 승리는 아니지만(사를 막고 나면 삼이 남아 다음 수에 사로 발전),
+// 막지 않으면 사실상 강제로 밀리는 위험한 형태라 같은 급으로 취급한다 — scoreCell은 이미
+// 이 모양에 가산점(+2500)을 주지만 그건 후보 정렬 우선순위일 뿐 강제 방어를 보장하지
+// 않으므로, 후보가 많은 국면에서 다른 수에 밀려 탐색에서 아예 빠질 위험이 있었다.
 // 즉시방어가 "막을 수 있는 곳 1곳"만 찾고 멈추면 열린사처럼 원천적으로 막을 수 없는
 // 위협을 절반만 막고 나머지 절반을 방치하는 문제가 생기므로, 반드시 전부 모아야 함.
 // opponent가 흑이면, 그 자리 자체가 흑의 금수(33/44/장목)인 경우는 위협에서 제외한다 —
@@ -258,8 +279,9 @@ function findCriticalDefenseCells(board, candidates, opponent) {
     board[row][col] = opponent
     const wins = checkWinBoard(board, row, col, opponent)
     const fourThreats = wins ? [] : getFourThreats(board, row, col, opponent)
+    const { fourDirs, threeDirs } = wins ? { fourDirs: 0, threeDirs: 0 } : countThreatDirections(board, row, col, opponent)
     board[row][col] = 0
-    if (wins || fourThreats.length >= 2) critical.push({ row, col })
+    if (wins || fourThreats.length >= 2 || (fourDirs >= 1 && threeDirs >= 1)) critical.push({ row, col })
   }
   return critical
 }
