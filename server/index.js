@@ -167,8 +167,11 @@ function applyRankedRating(roomId, winnerNumber) {
 
 io.use((socket, next) => {
   const cookieHeader = socket.handshake.headers.cookie || ''
-  const match = cookieHeader.match(new RegExp(`${SESSION_COOKIE}=([^;]+)`))
-  const token = match ? decodeURIComponent(match[1]) : null
+  const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`))
+  let token = null
+  if (match) {
+    try { token = decodeURIComponent(match[1]) } catch { token = null }
+  }
   socket.data.userId = verifySession(token)
   next()
 })
