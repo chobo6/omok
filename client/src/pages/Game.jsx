@@ -12,7 +12,7 @@ function createBoard() {
   return Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0))
 }
 
-export default function Game({ config, userId, onLeave }) {
+export default function Game({ config, onLeave }) {
   const { mode, nickname, action, roomCode, type: roomTypeConfig, humanColor } = config
   const isOnline = mode === 'online'
   const isSpectator = action === 'spectate'
@@ -52,7 +52,7 @@ export default function Game({ config, userId, onLeave }) {
   useEffect(() => {
     if (!isOnline) return
 
-    const socket = io('/', { path: '/socket.io', auth: { userId } })
+    const socket = io('/', { path: '/socket.io', withCredentials: true })
     socketRef.current = socket
 
     socket.on('connect', () => {
