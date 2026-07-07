@@ -35,6 +35,18 @@ function getOrCreateUserId(googleSub, profile) {
   return userId
 }
 
+// 순수 함수: db 객체에서 userId로 googleSub→userId 매핑을 역탐색해 저장된 이름을 조회한다.
+// ratings.json은 랭킹전 완료 시에만 저장되므로(server/ratings.js applyResult),
+// 로그인은 했지만 아직 첫 게임을 안 한 사용자의 닉네임은 여기서 가져와야 최신값이 보장된다.
+function resolveStoredName(db, userId) {
+  const entry = Object.values(db).find(u => u.userId === userId)
+  return entry?.name
+}
+
+function getStoredName(userId) {
+  return resolveStoredName(usersDb, userId)
+}
+
 function signSession(userId) {
   const secret = process.env.SESSION_JWT_SECRET
   if (!secret) throw new Error('SESSION_JWT_SECRET이 설정되지 않았습니다.')
@@ -67,4 +79,4 @@ async function verifyGoogleIdToken(credential) {
   return { sub: payload.sub, email: payload.email, name: payload.name }
 }
 
-module.exports = { resolveUserId, getOrCreateUserId, signSession, verifySession, verifyGoogleIdToken }
+module.exports = { resolveUserId, getOrCreateUserId, resolveStoredName, getStoredName, signSession, verifySession, verifyGoogleIdToken }

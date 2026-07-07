@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { resolveUserId, signSession, verifySession } = require('./googleAuth')
+const { resolveUserId, resolveStoredName, signSession, verifySession } = require('./googleAuth')
 
 test('resolveUserId creates a new user on first login', () => {
   const db = {}
@@ -32,6 +32,18 @@ test('resolveUserId keeps separate users independent', () => {
   const a = resolveUserId(db, 'google-sub-a', { email: 'a@example.com', name: 'A' })
   const b = resolveUserId(db, 'google-sub-b', { email: 'b@example.com', name: 'B' })
   assert.notStrictEqual(a, b)
+})
+
+test('resolveStoredName returns the stored name for an existing userId', () => {
+  const db = {}
+  const userId = resolveUserId(db, 'google-sub-name-1', { email: 'c@example.com', name: 'Charlie' })
+  assert.strictEqual(resolveStoredName(db, userId), 'Charlie')
+})
+
+test('resolveStoredName returns undefined for a userId not present in the db', () => {
+  const db = {}
+  resolveUserId(db, 'google-sub-name-2', { email: 'd@example.com', name: 'Dana' })
+  assert.strictEqual(resolveStoredName(db, 'u_does-not-exist'), undefined)
 })
 
 process.env.SESSION_JWT_SECRET = 'test-secret-value-not-used-in-prod'

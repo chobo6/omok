@@ -117,9 +117,11 @@ for each direction (dr, dc):
 
 ## 4. Socket.io 이벤트 명세
 
-### 클라이언트 접속 시 `auth`
+### 클라이언트 접속 시 인증 — 세션 쿠키
 
-소켓 연결 시 `{ auth: { userId } }`로 `userId`(localStorage UUID, `client/src/utils/userId.js`)를 전달. 서버는 `socket.handshake.auth.userId`로 레이팅 조회/갱신 키를 식별 (없으면 레이팅 관련 기능 비활성).
+클라이언트는 Google Identity Services로 로그인하고, 서버(`POST /api/auth/google`)가 ID 토큰을 검증한 뒤 세션 JWT를 발급해 httpOnly + `sameSite: 'lax'` 쿠키(`omok_session`)로 내려준다(`GET /api/auth/me`로 세션 복원, `POST /api/auth/logout`으로 폐기). 소켓 연결 시에는 `io('/', { withCredentials: true })`로 브라우저가 이 쿠키를 자동으로 함께 전송하며, 서버는 `io.use()` 미들웨어에서 핸드셰이크 쿠키 헤더를 파싱·검증해 `socket.data.userId`에 저장한다. 검증 실패/쿠키 없음이면 `socket.data.userId`는 `null`이며, 이 경우 게스트로 취급되어 랭킹전 관련 기능(레이팅 조회/갱신 등)은 비활성화되지만 공개방·AI 대전은 그대로 이용할 수 있다.
+
+이 쿠키 기반 방식은 클라이언트와 서버가 사실상 동일 사이트로 취급되어야 동작한다 — 개발 환경에서는 Vite 프록시가 브라우저 입장에서 동일 출처처럼 보이게 해주지만, 배포 환경에서 클라이언트와 API가 서로 다른 출처로 나뉘면 `sameSite: 'lax'` 쿠키가 전송되지 않으므로 `sameSite: 'none'` + `secure: true` 조합으로 전환해야 한다.
 
 ### 클라이언트 → 서버 (emit)
 

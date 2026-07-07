@@ -7,7 +7,7 @@ const cookieParser = require('cookie-parser')
 const { createBoard, checkWin, isBoardFull } = require('./gameLogic')
 const { checkForbidden } = require('./forbidden')
 const { getProfile, applyResult, getLeaderboard } = require('./ratings')
-const { getOrCreateUserId, signSession, verifySession, verifyGoogleIdToken } = require('./googleAuth')
+const { getOrCreateUserId, getStoredName, signSession, verifySession, verifyGoogleIdToken } = require('./googleAuth')
 
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:3000'
 const SESSION_COOKIE = 'omok_session'
@@ -16,6 +16,13 @@ const COOKIE_OPTIONS = {
   sameSite: 'lax',
   secure: process.env.NODE_ENV === 'production',
   maxAge: 30 * 24 * 60 * 60 * 1000, // 30일
+}
+
+// 부팅 시점에 미리 경고 — 설정이 빠진 채로 두면 로그인 시도 시점에야
+// opaque한 401로만 드러나 원인 파악이 어렵다. 인증 미설정이어도 공개방/AI 대전은
+// 정상 동작해야 하므로 process.exit()는 하지 않고 warn만 남긴다.
+if (!process.env.GOOGLE_CLIENT_ID || !process.env.SESSION_JWT_SECRET) {
+  console.warn('⚠️  GOOGLE_CLIENT_ID / SESSION_JWT_SECRET이 설정되지 않았습니다 — Google 로그인이 동작하지 않습니다. server/.env.example 참고.')
 }
 
 const app = express()
@@ -63,7 +70,7 @@ app.post('/api/auth/google', async (req, res) => {
 app.get('/api/auth/me', (req, res) => {
   const userId = verifySession(req.cookies[SESSION_COOKIE])
   if (!userId) return res.json(null)
-  res.json(getProfile(userId))
+  res.json(getProfile(userId, getStoredName(userId)))
 })
 
 app.post('/api/auth/logout', (req, res) => {
@@ -318,7 +325,7 @@ io.on('connection', (socket) => {
   // ── 프로필 조회 ──────────────────────────────────────────────────────────
   socket.on('profile:get', () => {
     if (!userId) return
-    socket.emit('profile:data', getProfile(userId))
+    socket.emit('profile:data', getProfile(userId, getStoredName(userId)))
   })
 
   // ── 돌 놓기 ──────────────────────────────────────────────────────────────
