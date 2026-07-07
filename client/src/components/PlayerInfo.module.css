@@ -3,16 +3,16 @@
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
-  background: #16213e;
-  border: 2px solid #0f3460;
-  border-radius: 8px;
+  background: var(--paper-soft);
+  border: 2px solid var(--line);
+  border-radius: 4px;
   transition: border-color 0.3s, box-shadow 0.3s;
   flex: 1;
 }
 
 .card.active {
-  border-color: #e2a84b;
-  box-shadow: 0 0 12px rgba(226, 168, 75, 0.3);
+  border-color: var(--celadon);
+  box-shadow: 0 0 0 3px rgba(95, 135, 112, 0.12);
 }
 
 .stone {
@@ -20,7 +20,7 @@
   height: 28px;
   border-radius: 50%;
   flex-shrink: 0;
-  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: 2px 2px 4px rgba(27, 27, 24, 0.3);
 }
 
 .info {
@@ -36,16 +36,16 @@
 .name {
   font-size: 14px;
   font-weight: 600;
-  color: #e2e8f0;
+  color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .rating {
   font-size: 11px;
-  color: #e2a84b;
+  color: var(--ink);
   font-weight: 700;
-  background: rgba(226, 168, 75, 0.12);
+  background: var(--paper);
   border-radius: 4px;
   padding: 1px 5px;
   flex-shrink: 0;
@@ -54,12 +54,12 @@
 .timer {
   font-size: 18px;
   font-weight: 700;
-  color: #a0aec0;
+  color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
 }
 
 .timer.low {
-  color: #fc8181;
+  color: var(--seal);
   animation: pulse 1s infinite;
 }
 
@@ -70,8 +70,8 @@
 
 .turnBadge {
   font-size: 11px;
-  background: #e2a84b;
-  color: #1a1a2e;
+  background: var(--celadon);
+  color: var(--paper-soft);
   padding: 3px 8px;
   border-radius: 12px;
   font-weight: 700;

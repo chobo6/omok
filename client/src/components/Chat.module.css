@@ -1,9 +1,9 @@
 .chat {
   display: flex;
   flex-direction: column;
-  background: #16213e;
-  border-radius: 8px;
-  border: 1px solid #0f3460;
+  background: var(--paper-soft);
+  border-radius: 4px;
+  border: 1px solid var(--line);
   height: 300px;
   width: 100%;
 }
@@ -12,8 +12,8 @@
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 600;
-  border-bottom: 1px solid #0f3460;
-  color: #a0aec0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-soft);
 }
 
 .messages {
@@ -29,7 +29,7 @@
   width: 4px;
 }
 .messages::-webkit-scrollbar-thumb {
-  background: #0f3460;
+  background: var(--line);
   border-radius: 2px;
 }
 
@@ -40,42 +40,44 @@
 }
 
 .nick {
-  color: #e2a84b;
+  color: var(--celadon);
   font-weight: 600;
   margin-right: 6px;
 }
 
 .text {
-  color: #cbd5e0;
+  color: var(--ink);
 }
 
 .inputRow {
   display: flex;
-  border-top: 1px solid #0f3460;
+  border-top: 1px solid var(--line);
 }
 
 .input {
   flex: 1;
   background: transparent;
   border: none;
-  color: #eee;
+  color: var(--ink);
   padding: 8px 10px;
   font-size: 13px;
 }
 
 .input::placeholder {
-  color: #4a5568;
+  color: var(--ink-faint);
 }
 
 .sendBtn {
-  background: #0f3460;
-  color: #eee;
+  background: transparent;
+  color: var(--ink-soft);
   font-size: 12px;
   padding: 8px 12px;
-  border-radius: 0 0 8px 0;
-  transition: background 0.2s;
+  border-radius: 0 0 4px 0;
+  border-left: 1px solid var(--line);
+  transition: all 0.2s;
 }
 
 .sendBtn:hover {
-  background: #1a4a80;
+  color: var(--ink);
+  background: var(--paper);
 }

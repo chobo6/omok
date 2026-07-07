@@ -87,12 +87,15 @@ export default function Lobby({ me, onAuthChange, onStart, onLeaderboard }) {
   return (
     <div className={styles.container}>
       <div className={styles.card}>
-        {/* 로고 */}
+        {/* 로고: 오목(다섯 목)의 승리 조건을 형상화한 다섯 점 */}
         <div className={styles.logo}>
-          <div className={styles.stones}>
-            <div className={styles.stoneB} />
-            <div className={styles.stoneW} />
-            <div className={styles.stoneB} />
+          <div className={styles.fiveDots} aria-hidden="true">
+            <span className={styles.dot} />
+            <span className={styles.dot} />
+            <span className={styles.dot} />
+            <span className={styles.dot} />
+            <span className={styles.dot} />
+            <span className={styles.line} />
           </div>
           <div className={styles.titleRow}>
             <h1 className={styles.title}>오목</h1>

@@ -3,69 +3,86 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  background: var(--paper);
   padding: 20px;
 }
 
 .card {
-  background: rgba(22, 33, 62, 0.95);
-  border: 1px solid #0f3460;
-  border-radius: 16px;
+  background: var(--paper-soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
   padding: 36px 40px;
   width: 100%;
   max-width: 420px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   gap: 0;
 }
 
-/* ── 로고 ── */
-.logo { text-align: center; margin-bottom: 24px; }
+/* ── 로고: 오목의 승리 조건(5목)을 은유하는 다섯 점 ── */
+.logo { text-align: center; padding-bottom: 20px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
 
-.stones {
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  margin-bottom: 10px;
+.fiveDots {
+  position: relative;
+  width: 96px;
+  height: 18px;
+  margin: 0 auto 12px;
 }
-.stoneB, .stoneW {
-  width: 22px;
-  height: 22px;
+.fiveDots .dot {
+  position: absolute;
+  top: 6px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
+  background: var(--ink);
+  opacity: 0;
+  animation: dotIn 0.4s ease-out forwards;
 }
-.stoneB { background: radial-gradient(circle at 35% 35%, #555, #000); border: 1px solid #333; }
-.stoneW { background: radial-gradient(circle at 35% 35%, #fff, #ccc); border: 1px solid #aaa; }
+.fiveDots .dot:nth-child(1) { left: 0;   animation-delay: 0s; }
+.fiveDots .dot:nth-child(2) { left: 22px; animation-delay: 0.12s; }
+.fiveDots .dot:nth-child(3) { left: 44px; animation-delay: 0.24s; }
+.fiveDots .dot:nth-child(4) { left: 66px; animation-delay: 0.36s; }
+.fiveDots .dot:nth-child(5) { left: 88px; animation-delay: 0.48s; }
+.fiveDots .line {
+  position: absolute;
+  top: 8px;
+  left: 3px;
+  height: 1px;
+  width: 0;
+  background: var(--celadon);
+  animation: lineGrow 0.5s ease-out 0.55s forwards;
+}
+@keyframes dotIn { to { opacity: 1; } }
+@keyframes lineGrow { to { width: 90px; } }
 
 .titleRow {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: center;
   gap: 12px;
-  margin-bottom: 4px;
 }
 .title {
-  font-size: 34px;
+  font-family: var(--font-display);
+  font-size: 32px;
   font-weight: 700;
-  color: #e2a84b;
-  letter-spacing: 4px;
+  color: var(--ink);
+  letter-spacing: 6px;
 }
 .rankBtn {
   font-size: 12px;
-  color: #a0aec0;
-  background: #0f3460;
-  border: 1px solid #1a4a80;
-  border-radius: 6px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
   padding: 4px 10px;
-  cursor: pointer;
   transition: all 0.2s;
 }
-.rankBtn:hover { color: #e2a84b; border-color: #e2a84b; }
+.rankBtn:hover { color: var(--seal); border-color: var(--seal); }
 
-.subtitle { font-size: 12px; color: #4a5568; }
+.subtitle { font-size: 12px; color: var(--ink-faint); margin-top: 6px; letter-spacing: 0.5px; }
 
 /* ── 로그인 상태 ── */
-.nicknameRow { margin-bottom: 20px; }
+.nicknameRow { padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--line); }
 
 .authRow {
   display: flex;
@@ -73,45 +90,28 @@
   justify-content: space-between;
   gap: 8px;
   font-size: 14px;
-  color: #a0aec0;
+  color: var(--ink-soft);
 }
 
-.input {
-  width: 100%;
-  padding: 10px 14px;
-  background: #0f3460;
-  border: 1px solid #1a4a80;
-  border-radius: 8px;
-  color: #eee;
-  font-size: 15px;
-  box-sizing: border-box;
-}
-.input::placeholder { color: #4a5568; }
-.input:focus { border-color: #e2a84b; outline: none; }
-
-/* ── 탭 ── */
+/* ── 탭: 밑줄 방식 ── */
 .tabs {
   display: flex;
-  gap: 4px;
-  margin-bottom: 16px;
-  background: #0a1628;
-  border-radius: 10px;
-  padding: 4px;
+  gap: 24px;
+  margin-bottom: 18px;
 }
 .tab {
-  flex: 1;
-  padding: 8px 0;
-  font-size: 13px;
+  padding: 0 0 8px;
+  font-size: 14px;
   font-weight: 600;
-  color: #4a6080;
-  border-radius: 7px;
-  transition: all 0.2s;
+  color: var(--ink-faint);
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
 }
-.tab:hover { color: #a0aec0; }
+.tab:hover { color: var(--ink-soft); }
 .tabActive {
-  background: #16213e;
-  color: #e2a84b;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  color: var(--ink);
+  border-bottom-color: var(--celadon);
 }
 
 /* ── 패널 공통 ── */
@@ -119,24 +119,25 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-bottom: 16px;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--line);
 }
 
-/* ── 버튼 ── */
+/* ── 버튼: 채움은 신호(seal) 하나뿐, 나머지는 전부 아웃라인 ── */
 .btn {
   width: 100%;
   padding: 13px;
-  border-radius: 10px;
+  border-radius: 4px;
   font-size: 15px;
   font-weight: 600;
-  cursor: pointer;
   transition: all 0.2s;
 }
-.btnPrimary { background: #e2a84b; color: #1a1a2e; }
-.btnPrimary:hover { background: #f0bc6a; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(226,168,75,0.3); }
+.btnPrimary { background: var(--seal); color: var(--paper-soft); }
+.btnPrimary:hover { background: var(--seal-dim); }
 
-.btnSecondary { background: #0f3460; color: #eee; border: 1px solid #1a4a80; }
-.btnSecondary:hover { background: #1a4a80; }
+.btnSecondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.btnSecondary:hover { border-color: var(--ink-soft); }
 
 .aiColorRow {
   display: flex;
@@ -146,24 +147,28 @@
 
 .btnAI {
   background: transparent;
-  color: #4a6080;
-  border: 1px solid #1a4a80;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
   font-size: 14px;
   padding: 10px;
-  margin-top: 0;
 }
-.btnAI:hover { color: #a0aec0; border-color: #4a6080; }
+.btnAI:hover { color: var(--ink); border-color: var(--ink-soft); }
 
 .btnSmall {
   width: auto;
   padding: 7px 14px;
   font-size: 13px;
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
 }
+.btnSmall:hover { border-color: var(--ink-soft); color: var(--ink); }
 
 /* ── 공개방 목록 ── */
 .roomList {
-  border: 1px solid #1a4a80;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
   overflow: hidden;
   max-height: 200px;
   overflow-y: auto;
@@ -171,7 +176,7 @@
 .emptyRooms {
   padding: 24px;
   text-align: center;
-  color: #4a5568;
+  color: var(--ink-faint);
   font-size: 13px;
 }
 .roomItem {
@@ -179,35 +184,33 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-bottom: 1px solid #0f3460;
+  border-bottom: 1px solid var(--line);
   transition: background 0.15s;
 }
 .roomItem:last-child { border-bottom: none; }
-.roomItem:hover { background: rgba(15, 52, 96, 0.5); }
+.roomItem:hover { background: var(--paper); }
 .roomInfo { display: flex; align-items: center; gap: 10px; }
-.roomHost { font-size: 14px; font-weight: 600; color: #e2e8f0; }
-.roomCount { font-size: 12px; color: #4a5568; }
+.roomHost { font-size: 14px; font-weight: 600; color: var(--ink); }
+.roomCount { font-size: 12px; color: var(--ink-faint); }
 
 /* ── 랭킹전 프로필 ── */
 .profileBox {
-  background: #0a1628;
-  border: 1px solid #1a4a80;
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
   padding: 16px;
   text-align: center;
 }
-.ratingLabel { font-size: 11px; color: #4a5568; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-.ratingValue { font-size: 36px; font-weight: 700; color: #e2a84b; font-variant-numeric: tabular-nums; }
+.ratingLabel { font-size: 11px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.ratingValue { font-size: 36px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
 .recordRow { display: flex; justify-content: center; gap: 12px; margin-top: 6px; font-size: 13px; font-weight: 600; }
-.win  { color: #68d391; }
-.lose { color: #fc8181; }
-.draw { color: #a0aec0; }
+.win  { color: var(--celadon); }
+.lose { color: var(--seal); }
+.draw { color: var(--ink-soft); }
 
 /* ── 랭킹전 대기열 ── */
 .queueBox {
-  background: #0a1628;
-  border: 1px solid #1a4a80;
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
   padding: 20px 16px;
   text-align: center;
   display: flex;
@@ -218,10 +221,10 @@
 .queueSpinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #1a4a80;
-  border-top-color: #e2a84b;
+  border: 3px solid var(--line);
+  border-top-color: var(--celadon);
   border-radius: 50%;
   animation: spin 0.9s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.queueText { color: #a0aec0; font-size: 14px; margin: 0; }
+.queueText { color: var(--ink-soft); font-size: 14px; margin: 0; }

@@ -1,6 +1,6 @@
 .container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  background: var(--paper);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -8,15 +8,15 @@
 }
 
 .waitingBanner {
-  background: #0f3460;
-  border: 1px solid #e2a84b;
-  border-radius: 8px;
+  background: var(--paper-soft);
+  border: 1px solid var(--celadon);
+  border-radius: 4px;
   padding: 12px 20px;
   margin-bottom: 16px;
   display: flex;
   align-items: center;
   gap: 16px;
-  color: #a0aec0;
+  color: var(--ink-soft);
   font-size: 14px;
   width: 100%;
   max-width: 900px;
@@ -56,41 +56,42 @@
 }
 
 .surrenderBtn {
-  background: #742a2a;
-  color: #fed7d7;
+  background: transparent;
+  color: var(--seal);
   font-size: 13px;
   font-weight: 600;
   padding: 8px 18px;
-  border-radius: 8px;
-  border: 1px solid #9b2c2c;
-  transition: background 0.2s;
+  border-radius: 4px;
+  border: 1px solid var(--seal);
+  transition: all 0.2s;
 }
 
 .surrenderBtn:hover {
-  background: #9b2c2c;
+  background: var(--seal);
+  color: var(--paper-soft);
 }
 
 .leaveBtn {
-  background: #2d3748;
-  color: #a0aec0;
+  background: transparent;
+  color: var(--ink-soft);
   font-size: 13px;
   font-weight: 600;
   padding: 8px 18px;
-  border-radius: 8px;
-  border: 1px solid #4a5568;
-  transition: background 0.2s;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  transition: all 0.2s;
 }
 
 .leaveBtn:hover {
-  background: #4a5568;
-  color: #eee;
+  border-color: var(--ink-soft);
+  color: var(--ink);
 }
 
 /* 게임 종료 모달 */
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(27, 27, 24, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -99,35 +100,36 @@
 }
 
 .modal {
-  background: #16213e;
-  border: 1px solid #0f3460;
-  border-radius: 16px;
+  background: var(--paper-soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
   padding: 40px;
   text-align: center;
   min-width: 300px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 20px 60px rgba(27, 27, 24, 0.18);
 }
 
 .modalTitle {
+  font-family: var(--font-display);
   font-size: 24px;
   font-weight: 700;
-  color: #e2a84b;
+  color: var(--ink);
   margin-bottom: 12px;
 }
 
 .modalResult {
   font-size: 18px;
-  color: #e2e8f0;
+  color: var(--ink);
   margin-bottom: 24px;
 }
 
 .rematchInfo {
   font-size: 13px;
-  color: #e2a84b;
+  color: var(--celadon);
   margin-bottom: 16px;
   padding: 8px;
-  background: rgba(226, 168, 75, 0.1);
-  border-radius: 6px;
+  background: rgba(95, 135, 112, 0.1);
+  border-radius: 4px;
 }
 
 .ratingDelta {
@@ -136,11 +138,11 @@
   justify-content: center;
   gap: 8px;
   font-size: 15px;
-  color: #a0aec0;
+  color: var(--ink-soft);
   margin-bottom: 4px;
 }
-.ratingUp   { color: #68d391; font-weight: 700; }
-.ratingDown { color: #fc8181; font-weight: 700; }
+.ratingUp   { color: var(--celadon); font-weight: 700; }
+.ratingDown { color: var(--seal); font-weight: 700; }
 
 .modalActions {
   display: flex;
@@ -149,17 +151,17 @@
 }
 
 .rematchBtn {
-  background: #e2a84b;
-  color: #1a1a2e;
+  background: var(--seal);
+  color: var(--paper-soft);
   font-size: 15px;
   font-weight: 700;
   padding: 10px 24px;
-  border-radius: 10px;
+  border-radius: 4px;
   transition: background 0.2s;
 }
 
 .rematchBtn:hover {
-  background: #f0bc6a;
+  background: var(--seal-dim);
 }
 
 @media (max-width: 700px) {

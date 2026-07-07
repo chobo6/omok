@@ -1,3 +1,20 @@
+:root {
+  /* ── 묵점(Ink & Paper) 토큰 ── */
+  --ink: #1b1b18;
+  --ink-soft: #6b6558;
+  --ink-faint: #a39c8a;
+  --paper: #ede7d8;
+  --paper-soft: #f7f4ea;
+  --celadon: #5f8770;
+  --celadon-dim: #7c9c8a;
+  --seal: #9c3b2e;
+  --seal-dim: #b25344;
+  --line: #c9c0ac;
+
+  --font-display: 'Noto Serif KR', serif;
+  --font-body: 'PretendardVariable', 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -5,9 +22,9 @@
 }
 
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: #1a1a2e;
-  color: #eee;
+  font-family: var(--font-body);
+  background: var(--paper);
+  color: var(--ink);
   min-height: 100vh;
 }
 
@@ -20,9 +37,26 @@ body {
 button {
   cursor: pointer;
   border: none;
+  font-family: inherit;
   outline: none;
 }
 
 input {
+  font-family: inherit;
   outline: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--celadon);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

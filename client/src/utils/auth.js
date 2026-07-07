@@ -26,7 +26,7 @@ export async function renderGoogleButton(containerId, onCredential) {
   })
   window.google.accounts.id.renderButton(
     document.getElementById(containerId),
-    { theme: 'outline', size: 'large', text: 'signin_with' }
+    { theme: 'outline', size: 'medium', shape: 'pill', text: 'signin_with' }
   )
 }
 

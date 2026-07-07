@@ -66,7 +66,7 @@ export default function Board({ board, onMove, lastMove, disabled, myColor, forb
     // 마지막 수 표시
     if (lastMove) {
       const { row, col } = lastMove
-      ctx.strokeStyle = lastMove.player === 1 ? '#ff4444' : '#4488ff'
+      ctx.strokeStyle = lastMove.player === 1 ? '#9c3b2e' : '#5f8770'
       ctx.lineWidth = 2
       const cx = padding + col * CELL_SIZE
       const cy = padding + row * CELL_SIZE
@@ -79,7 +79,7 @@ export default function Board({ board, onMove, lastMove, disabled, myColor, forb
       const cy = padding + row * CELL_SIZE
       const s = CELL_SIZE * 0.28
 
-      ctx.fillStyle = 'rgba(220, 40, 40, 0.75)'
+      ctx.fillStyle = 'rgba(156, 59, 46, 0.75)'
       ctx.beginPath()
       ctx.moveTo(cx, cy - s)
       ctx.lineTo(cx + s * 0.87, cy + s * 0.5)
