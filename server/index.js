@@ -165,8 +165,16 @@ function applyRankedRating(roomId, winnerNumber) {
 
 // ─── 이벤트 핸들러 ────────────────────────────────────────────────────────────
 
+io.use((socket, next) => {
+  const cookieHeader = socket.handshake.headers.cookie || ''
+  const match = cookieHeader.match(new RegExp(`${SESSION_COOKIE}=([^;]+)`))
+  const token = match ? decodeURIComponent(match[1]) : null
+  socket.data.userId = verifySession(token)
+  next()
+})
+
 io.on('connection', (socket) => {
-  const { userId } = socket.handshake.auth
+  const userId = socket.data.userId
   console.log('connected:', socket.id)
 
   // ── 방 만들기 (공개) ────────────────────────────────────────────────────
@@ -228,7 +236,7 @@ io.on('connection', (socket) => {
 
   // ── 랭킹전 대기열 참가 ───────────────────────────────────────────────────
   socket.on('ranked:queue:join', ({ nickname }) => {
-    if (!userId) { socket.emit('room:error', { message: '사용자 정보가 없습니다.' }); return }
+    if (!userId) { socket.emit('room:error', { message: '로그인이 필요합니다.' }); return }
 
     const nick = nickname || '플레이어'
     const profile = getProfile(userId, nick)
@@ -278,7 +286,7 @@ io.on('connection', (socket) => {
 
   // ── 랭킹전 게임 소켓으로 방 참가 ─────────────────────────────────────────
   socket.on('ranked:join', ({ roomId }) => {
-    if (!userId) { socket.emit('room:error', { message: '사용자 정보가 없습니다.' }); return }
+    if (!userId) { socket.emit('room:error', { message: '로그인이 필요합니다.' }); return }
     const room = rooms.get(roomId)
     if (!room || room.type !== 'ranked' || room.status !== 'ranked_pending') {
       socket.emit('room:error', { message: '매칭 정보를 찾을 수 없습니다.' }); return
