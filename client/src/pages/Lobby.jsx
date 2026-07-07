@@ -1,16 +1,35 @@
 import { useState, useEffect, useRef } from 'react'
 import { io } from 'socket.io-client'
+import { getGuestNickname } from '../utils/guestNickname'
+import { renderGoogleButton, loginWithGoogle, logout as logoutRequest } from '../utils/auth'
 import styles from './Lobby.module.css'
 
-export default function Lobby({ userId, onStart, onLeaderboard }) {
-  const [nickname, setNickname] = useState('')
+export default function Lobby({ me, onAuthChange, onStart, onLeaderboard }) {
   const [tab, setTab] = useState('public')   // public | ranked
   const [publicRooms, setPublicRooms] = useState([])
   const [myProfile, setMyProfile] = useState(null)
   const [inQueue, setInQueue] = useState(false)
   const socketRef = useRef(null)
 
-  const nick = nickname.trim() || '플레이어'
+  const nick = me?.nickname || getGuestNickname()
+
+  // 비로그인 상태면 Google 로그인 버튼을 렌더링
+  useEffect(() => {
+    if (me) return
+    renderGoogleButton('google-signin-button', async (credential) => {
+      try {
+        const profile = await loginWithGoogle(credential)
+        onAuthChange(profile)
+      } catch {
+        alert('로그인에 실패했습니다.')
+      }
+    })
+  }, [me])
+
+  async function handleLogout() {
+    await logoutRequest()
+    onAuthChange(null)
+  }
 
   // 공개방 목록 2초마다 폴링
   useEffect(() => {
@@ -26,11 +45,11 @@ export default function Lobby({ userId, onStart, onLeaderboard }) {
     return () => clearInterval(iv)
   }, [tab])
 
-  // 랭킹전 탭: 소켓 연결 + 프로필 로드
+  // 랭킹전 탭: 로그인 상태일 때만 소켓 연결 + 프로필 로드
   useEffect(() => {
-    if (tab !== 'ranked') return
+    if (tab !== 'ranked' || !me) return
 
-    const socket = io('/', { path: '/socket.io', auth: { userId } })
+    const socket = io('/', { path: '/socket.io', withCredentials: true })
     socketRef.current = socket
 
     socket.on('connect', () => socket.emit('profile:get'))
@@ -53,7 +72,7 @@ export default function Lobby({ userId, onStart, onLeaderboard }) {
       socketRef.current = null
       setInQueue(false)
     }
-  }, [tab]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, me]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleJoinQueue() {
     socketRef.current?.emit('ranked:queue:join', { nickname: nick })
@@ -82,15 +101,19 @@ export default function Lobby({ userId, onStart, onLeaderboard }) {
           <p className={styles.subtitle}>온라인 오목 · 렌주룰</p>
         </div>
 
-        {/* 닉네임 */}
+        {/* 로그인 상태 */}
         <div className={styles.nicknameRow}>
-          <input
-            className={styles.input}
-            placeholder="닉네임 (선택)"
-            value={nickname}
-            onChange={e => setNickname(e.target.value)}
-            maxLength={12}
-          />
+          {me ? (
+            <div className={styles.authRow}>
+              <span>{me.nickname}님</span>
+              <button className={`${styles.btn} ${styles.btnSmall}`} onClick={handleLogout}>로그아웃</button>
+            </div>
+          ) : (
+            <div className={styles.authRow}>
+              <span>게스트: {nick}</span>
+              <div id="google-signin-button" />
+            </div>
+          )}
         </div>
 
         {/* 탭 */}
@@ -152,29 +175,35 @@ export default function Lobby({ userId, onStart, onLeaderboard }) {
         {/* 랭킹전 */}
         {tab === 'ranked' && (
           <div className={styles.panel}>
-            {myProfile && (
-              <div className={styles.profileBox}>
-                <div className={styles.ratingLabel}>내 레이팅 (ELO)</div>
-                <div className={styles.ratingValue}>{myProfile.rating}</div>
-                <div className={styles.recordRow}>
-                  <span className={styles.win}>{myProfile.wins}승</span>
-                  <span className={styles.lose}>{myProfile.losses}패</span>
-                  {myProfile.draws > 0 && <span className={styles.draw}>{myProfile.draws}무</span>}
-                </div>
-              </div>
-            )}
-            {!inQueue ? (
-              <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={handleJoinQueue}>
-                대기열 참가
-              </button>
+            {!me ? (
+              <div className={styles.emptyRooms}>랭킹전은 로그인이 필요합니다.</div>
             ) : (
-              <div className={styles.queueBox}>
-                <div className={styles.queueSpinner} />
-                <p className={styles.queueText}>상대를 찾는 중...</p>
-                <button className={`${styles.btn} ${styles.btnSecondary}`} onClick={handleLeaveQueue}>
-                  취소
-                </button>
-              </div>
+              <>
+                {myProfile && (
+                  <div className={styles.profileBox}>
+                    <div className={styles.ratingLabel}>내 레이팅 (ELO)</div>
+                    <div className={styles.ratingValue}>{myProfile.rating}</div>
+                    <div className={styles.recordRow}>
+                      <span className={styles.win}>{myProfile.wins}승</span>
+                      <span className={styles.lose}>{myProfile.losses}패</span>
+                      {myProfile.draws > 0 && <span className={styles.draw}>{myProfile.draws}무</span>}
+                    </div>
+                  </div>
+                )}
+                {!inQueue ? (
+                  <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={handleJoinQueue}>
+                    대기열 참가
+                  </button>
+                ) : (
+                  <div className={styles.queueBox}>
+                    <div className={styles.queueSpinner} />
+                    <p className={styles.queueText}>상대를 찾는 중...</p>
+                    <button className={`${styles.btn} ${styles.btnSecondary}`} onClick={handleLeaveQueue}>
+                      취소
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
