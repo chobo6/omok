@@ -4,8 +4,7 @@ import styles from './Lobby.module.css'
 
 export default function Lobby({ userId, onStart, onLeaderboard }) {
   const [nickname, setNickname] = useState('')
-  const [tab, setTab] = useState('private')   // private | public | ranked
-  const [roomCode, setRoomCode] = useState('')
+  const [tab, setTab] = useState('public')   // public | ranked
   const [publicRooms, setPublicRooms] = useState([])
   const [myProfile, setMyProfile] = useState(null)
   const [inQueue, setInQueue] = useState(false)
@@ -97,7 +96,6 @@ export default function Lobby({ userId, onStart, onLeaderboard }) {
         {/* 탭 */}
         <div className={styles.tabs}>
           {[
-            { key: 'private', label: '비공개방' },
             { key: 'public',  label: '공개방' },
             { key: 'ranked',  label: '랭킹전' },
           ].map(({ key, label }) => (
@@ -111,37 +109,6 @@ export default function Lobby({ userId, onStart, onLeaderboard }) {
           ))}
         </div>
 
-        {/* 비공개방 */}
-        {tab === 'private' && (
-          <div className={styles.panel}>
-            <button
-              className={`${styles.btn} ${styles.btnPrimary}`}
-              onClick={() => onStart({ mode: 'online', action: 'create', nickname: nick, type: 'private' })}
-            >
-              방 만들기
-            </button>
-            <div className={styles.divider}>또는</div>
-            <div className={styles.joinRow}>
-              <input
-                className={styles.input}
-                placeholder="방 코드 입력"
-                value={roomCode}
-                onChange={e => setRoomCode(e.target.value.toUpperCase())}
-                maxLength={6}
-              />
-              <button
-                className={`${styles.btn} ${styles.btnSecondary}`}
-                onClick={() => {
-                  if (!roomCode.trim()) return
-                  onStart({ mode: 'online', action: 'join', roomCode: roomCode.trim(), nickname: nick })
-                }}
-              >
-                입장
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* 공개방 */}
         {tab === 'public' && (
           <div className={styles.panel}>
@@ -153,22 +120,30 @@ export default function Lobby({ userId, onStart, onLeaderboard }) {
             </button>
             <div className={styles.roomList}>
               {publicRooms.length === 0 ? (
-                <div className={styles.emptyRooms}>대기 중인 공개방이 없습니다</div>
+                <div className={styles.emptyRooms}>공개방이 없습니다</div>
               ) : (
-                publicRooms.map(room => (
-                  <div key={room.roomId} className={styles.roomItem}>
-                    <div className={styles.roomInfo}>
-                      <span className={styles.roomHost}>{room.host}</span>
-                      <span className={styles.roomCount}>{room.playerCount}/2</span>
+                publicRooms.map(room => {
+                  const isFull = room.playerCount >= 2
+                  return (
+                    <div key={room.roomId} className={styles.roomItem}>
+                      <div className={styles.roomInfo}>
+                        <span className={styles.roomHost}>{room.host}</span>
+                        <span className={styles.roomCount}>{room.playerCount}/2</span>
+                      </div>
+                      <button
+                        className={`${styles.btn} ${styles.btnSmall}`}
+                        onClick={() => onStart({
+                          mode: 'online',
+                          action: isFull ? 'spectate' : 'join',
+                          roomCode: room.roomId,
+                          nickname: nick,
+                        })}
+                      >
+                        {isFull ? '관전' : '입장'}
+                      </button>
                     </div>
-                    <button
-                      className={`${styles.btn} ${styles.btnSmall}`}
-                      onClick={() => onStart({ mode: 'online', action: 'join', roomCode: room.roomId, nickname: nick })}
-                    >
-                      입장
-                    </button>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
           </div>

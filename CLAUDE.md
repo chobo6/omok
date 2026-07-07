@@ -30,7 +30,7 @@ npm run dev
 | `server/forbidden.js` | 렌주룰 금수 판정 CJS — 서버에서 사용 |
 | `server/ratings.js` | ELO 레이팅 계산·저장 (`server/data/ratings.json` 파일 기반, gitignore 처리됨) |
 | `client/src/pages/Game.jsx` | 게임 화면 핵심 로직 (온라인/AI 모드 통합) |
-| `client/src/pages/Lobby.jsx` | 방 생성/입장/AI 선택/공개방 목록/랭킹전 큐 3탭 화면 |
+| `client/src/pages/Lobby.jsx` | 방 생성/AI 선택/공개방 목록/랭킹전 큐 2탭 화면 |
 | `client/src/pages/Leaderboard.jsx` | 랭킹전 순위표 페이지 (상위 20명) |
 | `client/src/components/Board.jsx` | Canvas 오목판 렌더링, 금수 삼각형 표시 |
 | `client/src/utils/aiEngine.js` | Negamax + Alpha-Beta + 반복심화 + Transposition Table + VCF 위협 탐색 AI (증분 평가함수, 렌주 금수 활용) |
@@ -57,7 +57,7 @@ npm run dev
 
 ## Socket.io 이벤트 요약
 
-클라이언트→서버: `room:create`(`type: 'private'|'public'`), `room:join`, `game:move`, `game:surrender`, `game:rematch`, `chat:send`, `ranked:queue:join`, `ranked:queue:leave`, `ranked:join`, `profile:get`
+클라이언트→서버: `room:create`(`type: 'public'`), `room:join`, `room:spectate`, `game:move`, `game:surrender`, `game:rematch`, `chat:send`, `ranked:queue:join`, `ranked:queue:leave`, `ranked:join`, `profile:get`
 
 서버→클라이언트: `room:created`, `room:joined`, `room:error`, `room:state`, `timer:tick`, `game:over`, `game:restarted`, `game:rematch_requested`, `chat:message`, `ranked:queue:status`, `ranked:match:found`, `rating:update`, `profile:data`
 
@@ -73,6 +73,7 @@ REST: `GET /api/rooms` (공개방 목록 폴링), `GET /api/leaderboard` (랭킹
 - AI는 클라이언트에서 실행 (서버 AI 없음). **AI 대전 시 로비에서 사람이 흑/백을 선택**(`Lobby.jsx`, `humanColor` config) — 백은 금수 제한 없음, 흑은(사람이든 AI든) 금수 적용. AI가 흑일 땐 `aiEngine.js`가 자기 금수(33/44/장목)를 회피하도록 루트 후보를 필터링 + `Game.jsx`에 이중 안전망(혹시 회피 실패 시 즉시 패배 처리)
 - AI 연산(`getAIMove`)은 `Game.jsx`가 직접 호출하지 않고 `aiWorker.js`(Web Worker)에 위임됨. `postMessage`로 board 전달 → worker가 계산 → 결과만 반환
 - `Game.jsx`에서 소켓 이벤트 핸들러는 stale closure 방지를 위해 `useRef` 패턴 사용
+- **관전 모드**: 공개방은 게임 시작 후(`status: 'playing'`)에도 `/api/rooms` 목록에 남아 "관전" 버튼으로 입장 가능(`room:spectate`). 관전자는 `room.players`에 들어가지 않고 `socket.join`만 하므로 브로드캐스트는 받지만 착수/채팅은 서버가 조용히 무시함 — `Game.jsx`의 `isSpectator`가 보드 클릭·항복·재경기·채팅 입력을 클라이언트 쪽에서도 막음
 
 ## 참고 문서
 

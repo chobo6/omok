@@ -22,35 +22,6 @@
   max-width: 900px;
 }
 
-.roomCode {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #eee;
-  font-size: 14px;
-}
-
-.roomCode strong {
-  color: #e2a84b;
-  font-size: 18px;
-  letter-spacing: 3px;
-  font-family: monospace;
-}
-
-.copyBtn {
-  background: #e2a84b;
-  color: #1a1a2e;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 6px;
-  transition: background 0.2s;
-}
-
-.copyBtn:hover {
-  background: #f0bc6a;
-}
-
 .layout {
   display: flex;
   gap: 20px;

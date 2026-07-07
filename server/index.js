@@ -14,7 +14,9 @@ app.use(cors())
 app.get('/api/rooms', (req, res) => {
   const list = []
   for (const [roomId, room] of rooms.entries()) {
-    if (room.type === 'public' && room.status === 'waiting') {
+    // 진행 중(playing)인 방도 목록에 남겨둬서(2/2) 관전 입장이 가능하게 한다 —
+    // 종료(ended)된 방은 목록에서 빠짐(재경기 대기 중이라도 새로 관전할 대상은 아님)
+    if (room.type === 'public' && (room.status === 'waiting' || room.status === 'playing')) {
       list.push({
         roomId,
         host: room.nicknames[room.players[0]] || '호스트',
@@ -51,10 +53,8 @@ function getRoomBySocket(socketId) {
   return null
 }
 
-function emitRoomState(roomId) {
-  const room = rooms.get(roomId)
-  if (!room) return
-  io.to(roomId).emit('room:state', {
+function buildRoomState(room) {
+  return {
     board: room.board,
     players: room.players.map((id, i) => ({
       id,
@@ -67,7 +67,13 @@ function emitRoomState(roomId) {
     status: room.status,
     lastMove: room.lastMove,
     roomType: room.type,
-  })
+  }
+}
+
+function emitRoomState(roomId) {
+  const room = rooms.get(roomId)
+  if (!room) return
+  io.to(roomId).emit('room:state', buildRoomState(room))
 }
 
 function startTimer(roomId) {
@@ -123,8 +129,8 @@ io.on('connection', (socket) => {
   const { userId } = socket.handshake.auth
   console.log('connected:', socket.id)
 
-  // ── 방 만들기 (비공개 / 공개) ────────────────────────────────────────────
-  socket.on('room:create', ({ nickname, type = 'private' }) => {
+  // ── 방 만들기 (공개) ────────────────────────────────────────────────────
+  socket.on('room:create', ({ nickname, type = 'public' }) => {
     const roomId = generateRoomId()
     const profile = userId ? getProfile(userId, nickname) : null
     rooms.set(roomId, {
@@ -146,7 +152,7 @@ io.on('connection', (socket) => {
     emitRoomState(roomId)
   })
 
-  // ── 방 입장 (코드 / 공개방 목록) ─────────────────────────────────────────
+  // ── 방 입장 (공개방 목록) ────────────────────────────────────────────────
   socket.on('room:join', ({ roomId, nickname }) => {
     const room = rooms.get(roomId)
     if (!room) { socket.emit('room:error', { message: '방을 찾을 수 없습니다.' }); return }
@@ -166,6 +172,18 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('room:joined', { roomId })
     startTimer(roomId)
     emitRoomState(roomId)
+  })
+
+  // ── 관전 (진행 중인 공개방) ──────────────────────────────────────────────
+  // room.players에는 추가하지 않는다 — socket.join만으로 이후 브로드캐스트(room:state/
+  // chat:message/timer:tick/game:over)를 그대로 받게 되고, game:move/chat:send 등은
+  // getRoomBySocket(room.players.includes 기준)이 관전자를 못 찾아 자연히 아무 효과가
+  // 없다(클라이언트에서도 보드/채팅 입력을 막지만, 서버도 이중으로 안전하게 무시함)
+  socket.on('room:spectate', ({ roomId }) => {
+    const room = rooms.get(roomId)
+    if (!room) { socket.emit('room:error', { message: '방을 찾을 수 없습니다.' }); return }
+    socket.join(roomId)
+    socket.emit('room:state', buildRoomState(room))
   })
 
   // ── 랭킹전 대기열 참가 ───────────────────────────────────────────────────

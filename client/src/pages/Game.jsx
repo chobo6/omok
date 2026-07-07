@@ -15,6 +15,7 @@ function createBoard() {
 export default function Game({ config, userId, onLeave }) {
   const { mode, nickname, action, roomCode, type: roomTypeConfig, humanColor } = config
   const isOnline = mode === 'online'
+  const isSpectator = action === 'spectate'
   // AI 모드에서 사람/AI가 각각 어느 색인지 — 로비에서 고른 색(humanColor), 기본은 흑
   const humanPlayer = humanColor === 'white' ? 2 : 1
   const aiPlayer = humanPlayer === 1 ? 2 : 1
@@ -26,12 +27,10 @@ export default function Game({ config, userId, onLeave }) {
   const [lastMove, setLastMove] = useState(null)
   const [gameOver, setGameOver] = useState(null)  // { winner, reason }
   const [messages, setMessages] = useState([])
-  const [roomId, setRoomId] = useState('')
   const [players, setPlayers] = useState([])
   const [myColor, setMyColor] = useState(null)  // 'black' | 'white'
-  const [copied, setCopied] = useState(false)
   const [rematchRequested, setRematchRequested] = useState(false)
-  const [roomType, setRoomType] = useState('private')
+  const [roomType, setRoomType] = useState('public')
   const [ratingDelta, setRatingDelta] = useState(null)  // { delta, newRating }
 
   // AI 모드 타이머
@@ -58,20 +57,14 @@ export default function Game({ config, userId, onLeave }) {
 
     socket.on('connect', () => {
       if (action === 'create') {
-        socket.emit('room:create', { nickname, type: roomTypeConfig || 'private' })
+        socket.emit('room:create', { nickname, type: roomTypeConfig || 'public' })
       } else if (action === 'ranked_join') {
         socket.emit('ranked:join', { roomId: roomCode })
+      } else if (action === 'spectate') {
+        socket.emit('room:spectate', { roomId: roomCode })
       } else {
         socket.emit('room:join', { roomId: roomCode, nickname })
       }
-    })
-
-    socket.on('room:created', ({ roomId }) => {
-      setRoomId(roomId)
-    })
-
-    socket.on('room:joined', ({ roomId }) => {
-      setRoomId(roomId)
     })
 
     socket.on('room:error', ({ message }) => {
@@ -266,7 +259,7 @@ export default function Game({ config, userId, onLeave }) {
   }
 
   function onBoardClick(row, col) {
-    if (status !== 'playing' || gameOver) return
+    if (status !== 'playing' || gameOver || isSpectator) return
 
     if (isOnline) {
       const myTurn = myColor === 'black' ? 1 : 2
@@ -318,19 +311,13 @@ export default function Game({ config, userId, onLeave }) {
     }
   }
 
-  function copyRoomCode() {
-    navigator.clipboard.writeText(roomId)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
   // 내 턴 여부
   const isMyTurn = isOnline
     ? myColor === 'black' ? currentTurn === 1 : currentTurn === 2
     : currentTurn === humanPlayer
 
   // 보드 클릭 비활성화 조건
-  const boardDisabled = status !== 'playing' || !!gameOver || (isOnline && !isMyTurn) || (!isOnline && currentTurn === aiPlayer)
+  const boardDisabled = isSpectator || status !== 'playing' || !!gameOver || (isOnline && !isMyTurn) || (!isOnline && currentTurn === aiPlayer)
 
   // 흑 차례일 때만 금수 위치 계산 (시각화) — AI 모드에서는 흑을 사람이 두든 AI가
   // 두든 상관없이 표시(사람이 백을 골랐을 때 AI의 흑 착수를 구경하는 용도도 겸함)
@@ -364,16 +351,10 @@ export default function Game({ config, userId, onLeave }) {
 
   return (
     <div className={styles.container}>
-      {/* 방 코드 배너 */}
+      {/* 대기 배너 */}
       {isOnline && status === 'waiting' && (
         <div className={styles.waitingBanner}>
-          <span>친구를 기다리는 중...</span>
-          <div className={styles.roomCode}>
-            방 코드: <strong>{roomId}</strong>
-            <button className={styles.copyBtn} onClick={copyRoomCode}>
-              {copied ? '복사됨!' : '복사'}
-            </button>
-          </div>
+          <span>상대를 기다리는 중...</span>
         </div>
       )}
 
@@ -402,7 +383,7 @@ export default function Game({ config, userId, onLeave }) {
           />
 
           <div className={styles.actions}>
-            {status === 'playing' && isOnline && (
+            {status === 'playing' && isOnline && !isSpectator && (
               <button className={styles.surrenderBtn} onClick={handleSurrender}>항복</button>
             )}
             <button className={styles.leaveBtn} onClick={onLeave}>나가기</button>
@@ -411,7 +392,7 @@ export default function Game({ config, userId, onLeave }) {
 
         {/* 우측: 채팅 */}
         <div className={styles.rightPanel}>
-          <Chat messages={messages} onSend={handleChatSend} />
+          <Chat messages={messages} onSend={handleChatSend} disabled={isSpectator} />
         </div>
       </div>
 
@@ -428,7 +409,8 @@ export default function Game({ config, userId, onLeave }) {
             </div>
             <div className={styles.modalResult}>
               {gameOver.winner === 0 ? '비겼습니다' :
-               isOnline
+               isSpectator ? `${gameOver.winner === 1 ? '흑' : '백'} 승리`
+               : isOnline
                  ? (gameOver.winnerId === socketRef.current?.id ? '승리했습니다! 🎉' : '패배했습니다')
                  : (gameOver.winner === humanPlayer ? '승리했습니다! 🎉' : 'AI가 이겼습니다')}
             </div>
@@ -443,7 +425,7 @@ export default function Game({ config, userId, onLeave }) {
             )}
             {rematchRequested && <div className={styles.rematchInfo}>상대방이 재경기를 요청했습니다</div>}
             <div className={styles.modalActions}>
-              {roomType !== 'ranked' && (
+              {roomType !== 'ranked' && !isSpectator && (
                 <button className={styles.rematchBtn} onClick={handleRematch}>
                   {isOnline ? '재경기 요청' : '다시하기'}
                 </button>

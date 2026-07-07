@@ -151,28 +151,6 @@
   font-size: 13px;
 }
 
-/* ── 비공개방 ── */
-.divider {
-  text-align: center;
-  color: #4a5568;
-  font-size: 12px;
-  position: relative;
-}
-.divider::before, .divider::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: 42%;
-  height: 1px;
-  background: #0f3460;
-}
-.divider::before { left: 0; }
-.divider::after { right: 0; }
-
-.joinRow { display: flex; gap: 8px; }
-.joinRow .input { flex: 1; letter-spacing: 2px; font-weight: 700; }
-.joinRow .btn { width: auto; padding: 10px 16px; font-size: 14px; }
-
 /* ── 공개방 목록 ── */
 .roomList {
   border: 1px solid #1a4a80;

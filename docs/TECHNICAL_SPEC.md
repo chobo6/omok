@@ -47,7 +47,7 @@ omok/
 │   └── src/
 │       ├── App.jsx        # 페이지 라우팅 (lobby ↔ game ↔ leaderboard)
 │       ├── pages/
-│       │   ├── Lobby.jsx       # 비공개방/공개방/랭킹전 3탭 + AI 대전 선택
+│       │   ├── Lobby.jsx       # 공개방/랭킹전 2탭 + AI 대전 선택
 │       │   ├── Game.jsx        # 게임 화면 (보드, 채팅, 타이머, 레이팅 통합)
 │       │   └── Leaderboard.jsx # 랭킹 순위표
 │       ├── components/
@@ -84,7 +84,7 @@ omok/
   timers: { [socketId]: number },   // 남은 시간(초)
   timerInterval: NodeJS.Timeout,
   rematchVotes: Set<string>,        // 재경기 동의 socketId
-  type: 'private' | 'public' | 'ranked',
+  type: 'public' | 'ranked',
   userIds: { [socketId]: string },        // 레이팅 조회용 익명 UUID
   initialRatings: { [socketId]: number | null }, // 입장 시점 레이팅 스냅샷 (표시용)
   pendingUsers?: { userId, nickname, rating }[], // status: 'ranked_pending'일 때만 — 매칭됐지만 아직 소켓 미입장
@@ -125,8 +125,9 @@ for each direction (dr, dc):
 
 | 이벤트 | payload | 설명 |
 |---|---|---|
-| `room:create` | `{ nickname, type: 'private' \| 'public' }` | 새 방 생성 |
-| `room:join` | `{ roomId, nickname }` | 방 입장 (코드 또는 공개방 목록에서) |
+| `room:create` | `{ nickname, type: 'public' }` | 새 방 생성 |
+| `room:join` | `{ roomId, nickname }` | 방 입장 (공개방 목록에서) |
+| `room:spectate` | `{ roomId }` | 관전 입장 — `room.players`에 추가되지 않음(착수/채팅 불가), 입장 즉시 현재 `room:state` 스냅샷을 받고 이후 브로드캐스트도 계속 수신 |
 | `ranked:queue:join` | `{ nickname }` | 랭킹전 매칭 대기열 등록 (대기 상대 있으면 즉시 매칭) |
 | `ranked:queue:leave` | — | 매칭 대기열 취소 |
 | `ranked:join` | `{ roomId }` | 매칭된 랭킹전 방에 실제 소켓 입장 |
@@ -158,7 +159,7 @@ for each direction (dr, dc):
 
 | 엔드포인트 | 설명 |
 |---|---|
-| `GET /api/rooms` | `status: 'waiting'`인 공개방(`type: 'public'`) 목록. 클라이언트가 로비에서 폴링 |
+| `GET /api/rooms` | `status`가 `'waiting'` 또는 `'playing'`인 공개방(`type: 'public'`) 목록(`'ended'`는 제외) — 진행 중인 방도 남겨둬 관전 입장 가능. 클라이언트가 로비에서 폴링 |
 | `GET /api/leaderboard` | 전적 있는 유저 중 레이팅 상위 20명 (`server/ratings.js`의 `getLeaderboard`) |
 
 #### `room:state` payload 구조
@@ -176,7 +177,7 @@ for each direction (dr, dc):
   currentTurn: 1 | 2,
   status: 'waiting' | 'playing' | 'ended',
   lastMove: { row, col, player } | null,
-  roomType: 'private' | 'public' | 'ranked',
+  roomType: 'public' | 'ranked',
 }
 ```
 
