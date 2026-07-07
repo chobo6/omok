@@ -1,13 +1,27 @@
+require('dotenv').config()
 const express = require('express')
 const http = require('http')
 const { Server } = require('socket.io')
 const cors = require('cors')
+const cookieParser = require('cookie-parser')
 const { createBoard, checkWin, isBoardFull } = require('./gameLogic')
 const { checkForbidden } = require('./forbidden')
 const { getProfile, applyResult, getLeaderboard } = require('./ratings')
+const { getOrCreateUserId, signSession, verifySession, verifyGoogleIdToken } = require('./googleAuth')
+
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:3000'
+const SESSION_COOKIE = 'omok_session'
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: process.env.NODE_ENV === 'production',
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 30일
+}
 
 const app = express()
-app.use(cors())
+app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }))
+app.use(cookieParser())
+app.use(express.json())
 
 // ─── REST ────────────────────────────────────────────────────────────────────
 
@@ -31,10 +45,36 @@ app.get('/api/leaderboard', (req, res) => {
   res.json(getLeaderboard(20))
 })
 
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { credential } = req.body
+    if (!credential) return res.status(400).json({ message: 'credential이 필요합니다.' })
+    const { sub, email, name } = await verifyGoogleIdToken(credential)
+    const userId = getOrCreateUserId(sub, { email, name })
+    const token = signSession(userId)
+    res.cookie(SESSION_COOKIE, token, COOKIE_OPTIONS)
+    res.json(getProfile(userId, name))
+  } catch (err) {
+    console.error('Google 로그인 실패:', err.message)
+    res.status(401).json({ message: '로그인에 실패했습니다.' })
+  }
+})
+
+app.get('/api/auth/me', (req, res) => {
+  const userId = verifySession(req.cookies[SESSION_COOKIE])
+  if (!userId) return res.json(null)
+  res.json(getProfile(userId))
+})
+
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie(SESSION_COOKIE, COOKIE_OPTIONS)
+  res.json({ ok: true })
+})
+
 // ─── Socket.io ───────────────────────────────────────────────────────────────
 
 const server = http.createServer(app)
-const io = new Server(server, { cors: { origin: '*' } })
+const io = new Server(server, { cors: { origin: CLIENT_ORIGIN, credentials: true } })
 
 // roomId → { board, players, nicknames, currentTurn, status, lastMove, chat,
 //             timers, timerInterval, type, userIds, initialRatings,
