@@ -351,13 +351,6 @@ export default function Game({ config, onLeave }) {
 
   return (
     <div className={styles.container}>
-      {/* 대기 배너 */}
-      {isOnline && status === 'waiting' && (
-        <div className={styles.waitingBanner}>
-          <span>상대를 기다리는 중...</span>
-        </div>
-      )}
-
       <div className={styles.layout}>
         {/* 좌측: 플레이어 정보 + 보드 */}
         <div className={styles.leftPanel}>
@@ -371,6 +364,12 @@ export default function Game({ config, onLeave }) {
                 showRating={roomType === 'ranked'}
               />
             ))}
+            {isOnline && status === 'waiting' && displayPlayers.length < 2 && (
+              <div className={styles.waitingSlot}>
+                <div className={styles.waitingSpinner} />
+                <span>상대를 기다리는 중...</span>
+              </div>
+            )}
           </div>
 
           <Board

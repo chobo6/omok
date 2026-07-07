@@ -7,20 +7,31 @@
   align-items: center;
 }
 
-.waitingBanner {
-  background: var(--paper-soft);
-  border: 1px solid var(--celadon);
-  border-radius: 4px;
-  padding: 12px 20px;
-  margin-bottom: 16px;
+.waitingSlot {
+  flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 16px;
-  color: var(--ink-soft);
-  font-size: 14px;
-  width: 100%;
-  max-width: 900px;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--paper);
+  border: 2px dashed var(--line);
+  border-radius: 4px;
+  color: var(--ink-faint);
+  font-size: 13px;
+  text-align: center;
 }
+
+.waitingSpinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--line);
+  border-top-color: var(--celadon);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .layout {
   display: flex;
