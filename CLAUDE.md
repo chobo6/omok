@@ -29,6 +29,7 @@ npm run dev
 | `server/gameLogic.js` | 보드 생성, 5목 판정 (순수 함수) |
 | `server/forbidden.js` | 렌주룰 금수 판정 CJS — 서버에서 사용 |
 | `server/ratings.js` | ELO 레이팅 계산·저장 (`server/data/ratings.json` 파일 기반, gitignore 처리됨) |
+| `server/googleAuth.js` | Google ID 토큰 검증, googleSub→userId 발급/조회(`server/data/users.json`), JWT 세션 서명/검증 |
 | `client/src/pages/Game.jsx` | 게임 화면 핵심 로직 (온라인/AI 모드 통합) |
 | `client/src/pages/Lobby.jsx` | 방 생성/AI 선택/공개방 목록/랭킹전 큐 2탭 화면 |
 | `client/src/pages/Leaderboard.jsx` | 랭킹전 순위표 페이지 (상위 20명) |
@@ -38,7 +39,8 @@ npm run dev
 | `client/src/utils/openingBook.js` | 로컬 Yixin 질의로 얻은 초반 3~8수째 오프닝북(228개, 흑/백 양쪽), RIF 공인 정석(화월·포월·은월·운월·우월 등 11개)을 8방향 회전 확장 (국면 일치 시에만 사용) |
 | `tools/bench-vs-yixin.mjs` | 로컬 Yixin 엔진 상대 AI 실력 검증 벤치마크 (개발용, pbrain 프로토콜) |
 | `client/src/utils/forbidden.js` | 렌주룰 금수 판정 ESM — 클라이언트에서 사용 |
-| `client/src/utils/userId.js` | localStorage 기반 익명 UUID 발급 (랭킹전 소켓 auth용) |
+| `client/src/utils/auth.js` | Google Identity Services 스크립트 로드/버튼 렌더링, `/api/auth/*` 호출(로그인/내 정보/로그아웃) |
+| `client/src/utils/guestNickname.js` | 게스트용 랜덤 닉네임 생성, sessionStorage로 탭 세션 동안만 유지 |
 
 ## 코딩 컨벤션
 
@@ -61,7 +63,7 @@ npm run dev
 
 서버→클라이언트: `room:created`, `room:joined`, `room:error`, `room:state`, `timer:tick`, `game:over`, `game:restarted`, `game:rematch_requested`, `chat:message`, `ranked:queue:status`, `ranked:match:found`, `rating:update`, `profile:data`
 
-REST: `GET /api/rooms` (공개방 목록 폴링), `GET /api/leaderboard` (랭킹 상위 20명)
+REST: `GET /api/rooms` (공개방 목록 폴링), `GET /api/leaderboard` (랭킹 상위 20명), `POST /api/auth/google`(Google ID 토큰 검증 후 세션 쿠키 발급), `GET /api/auth/me`(세션 기반 내 프로필 조회), `POST /api/auth/logout`(세션 쿠키 삭제)
 
 자세한 payload는 `docs/TECHNICAL_SPEC.md` 참고.
 
@@ -74,6 +76,7 @@ REST: `GET /api/rooms` (공개방 목록 폴링), `GET /api/leaderboard` (랭킹
 - AI 연산(`getAIMove`)은 `Game.jsx`가 직접 호출하지 않고 `aiWorker.js`(Web Worker)에 위임됨. `postMessage`로 board 전달 → worker가 계산 → 결과만 반환
 - `Game.jsx`에서 소켓 이벤트 핸들러는 stale closure 방지를 위해 `useRef` 패턴 사용
 - **관전 모드**: 공개방은 게임 시작 후(`status: 'playing'`)에도 `/api/rooms` 목록에 남아 "관전" 버튼으로 입장 가능(`room:spectate`). 관전자는 `room.players`에 들어가지 않고 `socket.join`만 하므로 브로드캐스트는 받지만 착수/채팅은 서버가 조용히 무시함 — `Game.jsx`의 `isSpectator`가 보드 클릭·항복·재경기·채팅 입력을 클라이언트 쪽에서도 막음
+- 인증은 httpOnly 쿠키 기반 세션(Google 로그인)이며, 게스트는 공개방 생성/입장과 AI 대전만 가능하고 랭킹전은 로그인 필수
 
 ## 참고 문서
 
