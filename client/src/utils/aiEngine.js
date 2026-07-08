@@ -95,13 +95,34 @@ function scoreCell(board, row, col, player) {
   // 확정승리에 준한다 — searchVCF는 이미 강제수순 안에서 이 판단을 하지만(약 350행),
   // 강제수순이 아직 성립하지 않은 평범한 국면에서는 이 정보가 후보 정렬에 전혀
   // 반영되지 않았다.
-  if (opp === 1 && myFourDirs === 0 && myThreeDirs >= 1) {
+  if (opp === 1 && myFourDirs === 0) {
     board[row][col] = player
-    const completions = getFourThreats(board, row, col, player)
-    board[row][col] = 0
-    if (completions.length === 1 && checkForbidden(board, completions[0].row, completions[0].col) !== null) {
-      score += 30000
+
+    // myThreeDirs>=1은 "이 후보가 사(四)를 만든다"는 뜻이다(analyzeDirection은 착수 전
+    // 기준으로 세므로, 사가 되는 자리는 이미 3목+빈칸2로 잡힌다 — 위 사(四) 보너스와
+    // 동일한 이유). 사가 만들어졌다면 그 완성 지점이 흑에게 금수인지 확인.
+    let fourBonusApplied = false
+    if (myThreeDirs >= 1) {
+      const fourCompletions = getFourThreats(board, row, col, player)
+      if (fourCompletions.length === 1 && checkForbidden(board, fourCompletions[0].row, fourCompletions[0].col) !== null) {
+        score += 30000
+        fourBonusApplied = true
+      }
     }
+
+    // 이 후보가 삼(뛴삼 포함)을 만드는지는 getThreeBlockPoints 자체가 실제 보드를
+    // 패턴 매칭해 판정하므로(삼이 아니면 빈 배열 반환), 위 사(四) 판정과 무관하게
+    // 항상 시도한다. 뛴삼은 완성 지점 보통 1곳, 평범한 열린삼은 보통 2곳(양 끝) —
+    // 그 지점들이 전부(하나든 둘이든) 흑에게 금수라면 흑은 합법적으로 막을 수 없다.
+    // 하나라도 합법이면 흑이 그쪽으로 막으면 그만이므로 보너스 대상이 아니다(every).
+    if (!fourBonusApplied) {
+      const threeBlockPoints = getThreeBlockPoints(board, row, col, player)
+      if (threeBlockPoints.length > 0 && threeBlockPoints.every(p => checkForbidden(board, p.row, p.col) !== null)) {
+        score += 20000
+      }
+    }
+
+    board[row][col] = 0
   }
 
   return score
@@ -263,6 +284,76 @@ function getFourThreats(board, row, col, player) {
     if (seen.has(key)) return false
     seen.add(key)
     if (player === 1 && checkForbidden(board, r, c) !== null) return false
+    return true
+  })
+}
+
+// forbidden.js의 _hasOpenThree와 동일한 6칸 패턴 4개를 재사용하되, 흑 전용이 아니라
+// 임의의 player에 대해 일반화하고, 참/거짓이 아니라 실제 완성 지점 좌표를 반환한다.
+// 한 방향에서 진짜 열린삼(양 끝 다 열림)이면 완성 지점이 보통 2곳(양 끝) 나오므로
+// 첫 매치에서 멈추지 않고 이 방향에서 가능한 매치를 전부 모은다.
+function getOpenThreeCompletions(board, row, col, dr, dc, player) {
+  const PATS = [
+    [[0, 1, 1, 1, 0, 0], 4, [1, 2, 3]],
+    [[0, 0, 1, 1, 1, 0], 1, [2, 3, 4]],
+    [[0, 1, 0, 1, 1, 0], 2, [1, 3, 4]],
+    [[0, 1, 1, 0, 1, 0], 3, [1, 2, 4]],
+  ]
+  const results = []
+
+  for (let off = 0; off <= 5; off++) {
+    const sr = row - off * dr, sc = col - off * dc
+    const cells = []
+    for (let i = 0; i < 6; i++) {
+      const r = sr + i * dr, c = sc + i * dc
+      if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE) { cells.push(9); continue }
+      const v = board[r][c]
+      cells.push(v === player ? 1 : v === 0 ? 0 : 9)
+    }
+
+    for (const [pat, fi, bis] of PATS) {
+      if (!cells.every((v, i) => v === pat[i])) continue
+      if (!bis.some(i => sr + i * dr === row && sc + i * dc === col)) continue
+
+      const fr = sr + fi * dr, fc = sc + fi * dc
+      board[fr][fc] = player
+      let left = 0, right = 0
+      for (let d = 1; d <= 4; d++) {
+        const r = fr - dr * d, c = fc - dc * d
+        if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE || board[r][c] !== player) break
+        left++
+      }
+      for (let d = 1; d <= 4; d++) {
+        const r = fr + dr * d, c = fc + dc * d
+        if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE || board[r][c] !== player) break
+        right++
+      }
+      const run = left + right + 1
+      const lr = fr - (left + 1) * dr, lc = fc - (left + 1) * dc
+      const rr = fr + (right + 1) * dr, rc = fc + (right + 1) * dc
+      const lOpen = lr >= 0 && lr < BOARD_SIZE && lc >= 0 && lc < BOARD_SIZE && board[lr][lc] === 0
+      const rOpen = rr >= 0 && rr < BOARD_SIZE && rc >= 0 && rc < BOARD_SIZE && board[rr][rc] === 0
+      board[fr][fc] = 0
+
+      if (run !== 4 || !lOpen || !rOpen) continue
+      results.push({ row: fr, col: fc })
+    }
+  }
+  return results
+}
+
+// (row,col)에 player가 착수했다고 가정한(board[row][col]=player로 이미 놓아둔 상태) 보드에서,
+// 4방향 전체의 열린삼 완성 지점을 모아 중복 제거해 반환.
+function getThreeBlockPoints(board, row, col, player) {
+  const all = []
+  for (const [dr, dc] of DIRECTIONS) {
+    all.push(...getOpenThreeCompletions(board, row, col, dr, dc, player))
+  }
+  const seen = new Set()
+  return all.filter(({ row: r, col: c }) => {
+    const key = `${r},${c}`
+    if (seen.has(key)) return false
+    seen.add(key)
     return true
   })
 }
