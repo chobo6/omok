@@ -211,6 +211,10 @@ const VCF_MAX_DEPTH = 8 // 내 착수 기준 최대 4수 앞까지 강제 승리
 
 // player가 (row,col)에 착수했다고 가정하고, 그 수가 만드는 "사(四)"들의 완성 지점(빈 칸)을 모두 반환.
 // 완성 지점이 2개 이상이면 상대가 둘 다 막을 수 없는 열린사(더블사) = 즉시 승리 확정
+// player가 흑이면 완성 지점 중 흑에게 금수(33/44/장목)인 칸은 제외한다 — 그 자리는 흑이
+// 실제로 둘 수 없는 자리라(둬도 승패와 무관하게 즉시 패배) "완성 지점"으로 셀 수 없다.
+// 이 필터가 없으면 한쪽 완성 지점이 장목이어서 실제로는 못 막는 게 아니라 안 둬도 되는
+// 자리인데도 더블사(강제승리)로 오판해 searchVCF/강제수 연장 판단이 전부 부풀려진다.
 function getFourThreats(board, row, col, player) {
   const completions = []
 
@@ -240,6 +244,7 @@ function getFourThreats(board, row, col, player) {
     const key = `${r},${c}`
     if (seen.has(key)) return false
     seen.add(key)
+    if (player === 1 && checkForbidden(board, r, c) !== null) return false
     return true
   })
 }
