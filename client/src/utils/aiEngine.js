@@ -86,6 +86,24 @@ function scoreCell(board, row, col, player) {
   if (enemyFourDirs >= 2) score += 40000
   else if (enemyFourDirs >= 1 && enemyThreeDirs >= 1) score += 2500
 
+  // 상대가 흑이고 이 자리가 어느 방향으로든 사(四)를 만드는 후보라면(myThreeDirs>=1 —
+  // analyzeDirection은 착수 "전" 기준으로 세므로 실제 사가 되는 자리도 3목+빈칸2로
+  // 잡힌다: 그 빈칸 중 하나가 바로 이 후보 자신이기 때문. myFourDirs는 이미 착수 없이도
+  // 4목+빈칸1인 경우(=즉시 5목 승리)라 이 용도엔 안 맞음), 실제로 착수해 만들어지는
+  // 사의 완성 지점을 getFourThreats로 계산하고, 유일한 완성 지점이 흑에게 금수(33/44/
+  // 장목)인지 확인한다. 금수라면 흑은 이 자리를 합법적으로 막을 수 없으므로 사실상
+  // 확정승리에 준한다 — searchVCF는 이미 강제수순 안에서 이 판단을 하지만(약 350행),
+  // 강제수순이 아직 성립하지 않은 평범한 국면에서는 이 정보가 후보 정렬에 전혀
+  // 반영되지 않았다.
+  if (opp === 1 && myFourDirs === 0 && myThreeDirs >= 1) {
+    board[row][col] = player
+    const completions = getFourThreats(board, row, col, player)
+    board[row][col] = 0
+    if (completions.length === 1 && checkForbidden(board, completions[0].row, completions[0].col) !== null) {
+      score += 30000
+    }
+  }
+
   return score
 }
 
