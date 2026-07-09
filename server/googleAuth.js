@@ -44,8 +44,12 @@ function getOAuthClient() {
 // Google ID 토큰(credential)을 검증해 { sub, email, name }을 반환한다.
 // 검증 실패(서명/audience 불일치, 만료 등) 시 throw — 호출부(라우트)가 catch해서 401 처리
 async function verifyGoogleIdToken(credential) {
+  const audience = process.env.GOOGLE_CLIENT_ID
+  // audience가 undefined면 google-auth-library가 aud 클레임 검증 자체를 건너뛰어, 이 앱이
+  // 아닌 다른 OAuth 클라이언트용으로 발급된 토큰도 통과해버린다 — 반드시 명시적으로 실패시킨다
+  if (!audience) throw new Error('GOOGLE_CLIENT_ID가 설정되지 않았습니다.')
   const client = getOAuthClient()
-  const ticket = await client.verifyIdToken({ idToken: credential, audience: process.env.GOOGLE_CLIENT_ID })
+  const ticket = await client.verifyIdToken({ idToken: credential, audience })
   const payload = ticket.getPayload()
   return { sub: payload.sub, email: payload.email, name: payload.name }
 }

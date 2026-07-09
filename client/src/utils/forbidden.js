@@ -15,8 +15,13 @@ export function checkForbidden(board, row, col, evaluating = new Set()) {
   board[row][col] = 1
   let result = null
 
-  if (_isOverline(board, row, col)) {
+  // 장목(6개 이상)은 방향과 무관하게 항상 금수 — 다른 방향에 정확히 5가 있어도 예외 없음.
+  // 오목(정확히 5개, 장목이 아닌 경우)은 다른 방향의 33/44보다 승리가 우선한다.
+  const maxRun = _maxRunLength(board, row, col)
+  if (maxRun >= 6) {
     result = '장목'
+  } else if (maxRun === 5) {
+    result = null
   } else {
     let fours = 0
     const fourDirs = new Set()
@@ -44,14 +49,16 @@ export function checkForbidden(board, row, col, evaluating = new Set()) {
   return result
 }
 
-function _isOverline(board, row, col) {
+// 이 지점을 지나는 4방향 중 가장 긴 연속 흑돌 길이(자기 자신 포함)
+function _maxRunLength(board, row, col) {
+  let max = 0
   for (const [dr, dc] of DIRS) {
     let n = 1
     for (let d = 1; d <= 5; d++) { if (cell(board, row+dr*d, col+dc*d) !== 1) break; n++ }
     for (let d = 1; d <= 5; d++) { if (cell(board, row-dr*d, col-dc*d) !== 1) break; n++ }
-    if (n >= 6) return true
+    if (n > max) max = n
   }
-  return false
+  return max
 }
 
 function _hasFour(board, row, col, dr, dc, evaluating) {

@@ -4,7 +4,7 @@ const http = require('http')
 const { Server } = require('socket.io')
 const cors = require('cors')
 const cookieParser = require('cookie-parser')
-const { createBoard, checkWin, isBoardFull } = require('./gameLogic')
+const { createBoard, checkWin, isBoardFull, BOARD_SIZE } = require('./gameLogic')
 const { checkForbidden } = require('./forbidden')
 const { getProfile, applyResult, getLeaderboard } = require('./ratings')
 const { getOrCreateUserId, signSession, verifySession, verifyGoogleIdToken } = require('./googleAuth')
@@ -66,7 +66,9 @@ app.post('/api/auth/google', async (req, res) => {
     const userId = await getOrCreateUserId(sub, { email, name })
     const token = signSession(userId)
     res.cookie(SESSION_COOKIE, token, COOKIE_OPTIONS)
-    res.json(await getProfile(userId, name))
+    // 로그인 시점엔 닉네임을 갱신하지 않는다 — name을 넘기면 사용자가 방 생성/입장 시
+    // 커스텀으로 설정해둔 닉네임이 매 로그인마다 구글 실명으로 덮어써짐
+    res.json(await getProfile(userId))
   } catch (err) {
     console.error('Google 로그인 실패:', err.message)
     res.status(401).json({ message: '로그인에 실패했습니다.' })
@@ -99,6 +101,9 @@ const io = new Server(server, { cors: { origin: CLIENT_ORIGIN, credentials: true
 //             pendingUsers(ranked_pending only), rematchVotes }
 const rooms = new Map()
 const rankedQueue = []  // [{ socketId, userId, nickname, rating }]
+// ranked:queue:join이 getProfile await 중인 userId 집합 — await 이전에 동기로 예약해
+// 같은 유저가 동시에 여러 탭에서 큐에 들어가 서로 다른 상대와 이중 매칭되는 걸 막는다
+const queueingUserIds = new Set()
 
 function generateRoomId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase()
@@ -176,7 +181,7 @@ async function applyRankedRating(roomId, gameOverPayload) {
   const [p1, p2] = room.players
   const uid1 = room.userIds?.[p1]
   const uid2 = room.userIds?.[p2]
-  if (!uid1 || !uid2) return
+  if (!uid1 || !uid2 || uid1 === uid2) return
   const { winner, reason, forbiddenType } = gameOverPayload
   const score = winner === 1 ? 1 : winner === 2 ? 0 : 0.5
   try {
@@ -219,7 +224,10 @@ io.on('connection', (socket) => {
   console.log('connected:', socket.id)
 
   // ── 방 만들기 (공개) ────────────────────────────────────────────────────
-  socket.on('room:create', async ({ nickname, type = 'public' }) => {
+  // type은 클라이언트 입력을 신뢰하지 않고 항상 'public'으로 고정한다 — 랭킹전 방은
+  // ranked:queue:join 매칭 경로로만 생성되며, 여기서 'ranked'를 허용하면 매칭 절차 없이
+  // 레이팅이 걸린 방을 직접 만들어 조작할 수 있게 된다
+  socket.on('room:create', async ({ nickname }) => {
     const roomId = generateRoomId()
     let profile = null
     if (userId) {
@@ -236,7 +244,7 @@ io.on('connection', (socket) => {
       chat: [],
       timers: { [socket.id]: 180 },
       timerInterval: null,
-      type,
+      type: 'public',
       userIds: { [socket.id]: userId },
       initialRatings: { [socket.id]: profile?.rating ?? null },
     })
@@ -253,13 +261,17 @@ io.on('connection', (socket) => {
     if (room.status !== 'waiting') { socket.emit('room:error', { message: '이미 게임이 시작된 방입니다.' }); return }
 
     // 자리 선점(동기) — getProfile await 도중 다른 room:join이 끼어들어 같은 방에 3번째
-    // 플레이어가 들어오는 경합을 막기 위해, DB 조회 전에 먼저 players/status를 확정한다
+    // 플레이어가 들어오는 경합을 막기 위해, DB 조회 전에 먼저 players/status를 확정한다.
+    // socket.join도 status='playing' 전환보다 먼저 동기로 끝내야 한다 — 그래야 await 도중
+    // 상대가 game:move를 보내도(예: 초고속 승리) 이 소켓이 이미 io room 멤버라서
+    // room:state/game:over 브로드캐스트를 놓치지 않는다
     room.players.push(socket.id)
     room.nicknames[socket.id] = nickname || '플레이어2'
     room.timers[socket.id] = 180
     room.userIds ??= {}
     room.userIds[socket.id] = userId
     room.initialRatings ??= {}
+    socket.join(roomId)
     room.status = 'playing'
 
     let profile = null
@@ -268,7 +280,6 @@ io.on('connection', (socket) => {
     }
     room.initialRatings[socket.id] = profile?.rating ?? null
 
-    socket.join(roomId)
     io.to(roomId).emit('room:joined', { roomId })
     startTimer(roomId)
     emitRoomState(roomId)
@@ -290,15 +301,35 @@ io.on('connection', (socket) => {
   socket.on('ranked:queue:join', async ({ nickname }) => {
     if (!userId) { socket.emit('room:error', { message: '로그인이 필요합니다.' }); return }
 
+    // 이미 매칭되어 ranked_pending/playing 방에 속해 있는 상태에서 다시 큐에 들어오는 것을
+    // 막는다 — 큐 배열만 보고 중복을 걸러내면 매칭 직후~ranked:join 사이의 창에서 같은
+    // 유저가 또 다른 상대와 매칭되어 첫 상대가 영원히 대기하게 되는 문제가 있었음.
+    // 이 체크와 큐잉 예약(queueingUserIds.add)은 반드시 getProfile await 이전에 동기로 끝내야
+    // 한다 — 그렇지 않으면 같은 유저가 두 탭에서 거의 동시에 큐에 들어왔을 때 둘 다
+    // alreadyMatched=false를 보고 통과해, 대기 중이던 서로 다른 두 상대와 각각 매칭되어
+    // 이중 매칭될 수 있다
+    const alreadyMatched = [...rooms.values()].some(r =>
+      r.type === 'ranked' &&
+      (r.status === 'ranked_pending' || r.status === 'playing') &&
+      (r.pendingUsers?.some(p => p.userId === userId) || Object.values(r.userIds || {}).includes(userId))
+    )
+    if (alreadyMatched || queueingUserIds.has(userId)) {
+      socket.emit('room:error', { message: '이미 매칭이 진행 중입니다.' })
+      return
+    }
+    queueingUserIds.add(userId)
+
     const nick = nickname || '플레이어'
     let profile
     try {
       profile = await getProfile(userId, nick)
     } catch (err) {
+      queueingUserIds.delete(userId)
       console.error('프로필 조회 실패:', err)
       socket.emit('room:error', { message: '잠시 후 다시 시도해주세요.' })
       return
     }
+    queueingUserIds.delete(userId)
 
     // 중복 제거 — getProfile await 이후부터는 끝까지 동기로 처리해 다른 ranked:queue:join과
     // 경합 없이 큐 상태를 안전하게 읽고 쓴다
@@ -322,9 +353,11 @@ io.on('connection', (socket) => {
         type: 'ranked',
         userIds: {},
         initialRatings: {},
+        // socketId도 함께 저장 — ranked:join 전에 상대가 끊기면 disconnect 핸들러가
+        // room.players(아직 비어있을 수 있음)가 아니라 이 socketId로 알림을 보낸다
         pendingUsers: [
-          { userId: opp.userId,  nickname: opp.nickname,  rating: opp.rating },
-          { userId,              nickname: nick,           rating: profile.rating },
+          { userId: opp.userId,  socketId: opp.socketId, nickname: opp.nickname, rating: opp.rating },
+          { userId,              socketId: socket.id,     nickname: nick,         rating: profile.rating },
         ],
       })
       // 30초 미참가 시 방 정리
@@ -393,6 +426,8 @@ io.on('connection', (socket) => {
     const playerIndex = room.players.indexOf(socket.id)
     const playerNumber = playerIndex + 1
     if (playerNumber !== room.currentTurn) return
+    if (!Number.isInteger(row) || !Number.isInteger(col) ||
+        row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) return
     if (room.board[row][col] !== 0) return
 
     if (playerNumber === 1) {
@@ -432,7 +467,12 @@ io.on('connection', (socket) => {
   // ── 재경기 ───────────────────────────────────────────────────────────────
   socket.on('game:rematch', () => {
     const found = getRoomBySocket(socket.id)
-    if (!found) return
+    if (!found) {
+      // 방이 이미 삭제됐거나(상대 연결 끊김 등), 애초에 이 방의 플레이어가 아닌 경우(예: 관전자가
+      // 콘솔로 직접 emit) 모두 해당 — 원인을 구분하지 않고 공통적으로 안내
+      socket.emit('room:error', { message: '재경기를 진행할 수 없습니다. 방이 종료되었거나 참가자가 아닙니다.' })
+      return
+    }
     const { roomId, room } = found
     if (room.type === 'ranked') {
       socket.emit('room:error', { message: '랭킹전은 재경기가 불가합니다. 대기열에 다시 참가해주세요.' })
@@ -484,15 +524,29 @@ io.on('connection', (socket) => {
     const qi = rankedQueue.findIndex(q => q.socketId === socket.id)
     if (qi !== -1) rankedQueue.splice(qi, 1)
 
-    const found = getRoomBySocket(socket.id)
+    // getRoomBySocket은 room.players만 훑는다 — ranked:join을 아직 안 해서 pendingUsers에만
+    // 있는 소켓이 끊기면 여기서 못 찾으므로, ranked_pending 방들의 pendingUsers도 추가로 확인한다
+    let found = getRoomBySocket(socket.id)
+    if (!found) {
+      for (const [rid, r] of rooms.entries()) {
+        if (r.status === 'ranked_pending' && r.pendingUsers?.some(p => p.socketId === socket.id)) {
+          found = { roomId: rid, room: r }
+          break
+        }
+      }
+    }
     if (!found) return
     const { roomId, room } = found
     clearInterval(room.timerInterval)
 
     if (room.status === 'ranked_pending') {
-      room.players.forEach(pid => {
-        if (pid !== socket.id) io.to(pid).emit('room:error', { message: '상대 연결이 끊겼습니다.' })
-      })
+      // ranked:join을 아직 안 한 상대는 room.players가 아니라 pendingUsers에만 socketId가
+      // 있으므로, 두 목록을 모두 훑어야 아직 참가하지 않은 상대에게도 알림이 간다
+      const targets = new Set([
+        ...room.players.filter(pid => pid !== socket.id),
+        ...(room.pendingUsers || []).map(p => p.socketId).filter(sid => sid && sid !== socket.id),
+      ])
+      targets.forEach(pid => io.to(pid).emit('room:error', { message: '상대 연결이 끊겼습니다.' }))
       rooms.delete(roomId)
       return
     }

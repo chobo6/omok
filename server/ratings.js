@@ -29,6 +29,7 @@ function calcElo(rA, rB, scoreFor) {
 }
 
 async function applyResult(uidA, uidB, scoreFor) {
+  if (uidA === uidB) throw new Error('applyResult: uidA와 uidB가 동일한 사용자입니다.')
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
