@@ -15,6 +15,16 @@
   box-shadow: 0 0 0 3px rgba(95, 135, 112, 0.12);
 }
 
+.card.win {
+  border-color: var(--celadon);
+  box-shadow: 0 0 0 3px rgba(95, 135, 112, 0.12);
+}
+
+.card.lose {
+  border-color: var(--line);
+  opacity: 0.75;
+}
+
 .stone {
   width: 28px;
   height: 28px;
@@ -49,7 +59,13 @@
   border-radius: 4px;
   padding: 1px 5px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
 }
+
+.ratingUp   { color: var(--celadon); }
+.ratingDown { color: var(--seal); }
 
 .timer {
   font-size: 18px;
@@ -77,3 +93,16 @@
   font-weight: 700;
   white-space: nowrap;
 }
+
+.resultBadge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.resultBadge.win  { background: var(--celadon); color: var(--paper-soft); }
+.resultBadge.lose { background: var(--paper); color: var(--ink-faint); }
+.resultBadge.draw { background: var(--ink-faint); color: var(--paper-soft); }

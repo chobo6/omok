@@ -51,9 +51,9 @@ omok/
 │       │   ├── Game.jsx        # 게임 화면 (보드, 채팅, 타이머, 레이팅 통합)
 │       │   └── Leaderboard.jsx # 랭킹 순위표
 │       ├── components/
-│       │   ├── Board.jsx      # Canvas 오목판 렌더링, 금수 삼각형 표시
+│       │   ├── Board.jsx      # Canvas 오목판 렌더링, 금수 삼각형 표시, 승리 5목 라인 하이라이트
 │       │   ├── Chat.jsx       # 채팅 UI
-│       │   └── PlayerInfo.jsx # 플레이어 정보 + 타이머 + 레이팅 배지
+│       │   └── PlayerInfo.jsx # 플레이어 정보 + 타이머 + 레이팅 배지 + 게임 종료 승/패/무 결과 배지
 │       └── utils/
 │           ├── aiEngine.js    # Minimax + VCF 위협 탐색 AI (클라이언트 사이드)
 │           ├── aiWorker.js    # aiEngine을 Web Worker에서 실행
@@ -148,7 +148,7 @@ for each direction (dr, dc):
 | `room:error` | `{ message }` | 입장/매칭 실패 사유 |
 | `room:state` | RoomState | 보드/턴/타이머/레이팅 전체 상태 동기화 |
 | `timer:tick` | `{ socketId, timeLeft }` | 매초 타이머 갱신 |
-| `game:over` | `{ winner, winnerId, reason }` | 게임 종료 (랭킹전이면 서버가 내부적으로 ELO 갱신 후 `rating:update`도 emit) |
+| `game:over` | `{ winner, winnerId, reason, winLine? }` | 게임 종료. `reason: 'win'`이면 승리로 이어진 연속 돌 좌표 배열 `winLine: [{row,col}, ...]`(길이 5 이상, 백은 장목 승리 시 6개 이상 가능)을 함께 보냄 — `Board.jsx`가 이 좌표들을 금색으로 하이라이트. 랭킹전이면 서버가 내부적으로 ELO 갱신 후 `rating:update`도 emit |
 | `game:rematch_requested` | `{ by }` | 상대방 재경기 요청 알림 |
 | `game:restarted` | — | 재경기 시작 |
 | `chat:message` | `{ nickname, message, time }` | 채팅 수신 |
@@ -187,11 +187,20 @@ for each direction (dr, dc):
 
 | reason | 설명 |
 |---|---|
-| `win` | 5목 달성 |
+| `win` | 5목 달성 (`winLine` 포함) |
 | `draw` | 보드 전체 채움 |
 | `timeout` | 타이머 0초 |
 | `surrender` | 항복 |
 | `disconnect` | 상대방 연결 끊김 |
+| `forbidden` | 흑의 금수(33/44/장목) 착수 — `forbiddenType`, `forbiddenMove` 함께 전달 |
+
+#### 게임 종료 UI (2026-07-09)
+
+게임 종료를 화면을 가리는 모달 대신 **상단 `PlayerInfo` 카드**에 인라인으로 표시한다 — 보드를 가리지 않아 승리 5목 라인을 바로 확인할 수 있고, 관전자 입장에서도 카드별로 승/패가 구분돼 별도 "누가 이겼는지" 텍스트 분기가 필요 없다.
+
+- `Game.jsx`의 `getResult(playerNum)`이 `gameOver`를 기준으로 각 플레이어 카드에 표시할 `{ text: '승리'|'패배'|'무승부', variant: 'win'|'lose'|'draw', reason? }`를 계산 — `reason`은 `win` 외의 사유일 때만 짧게 덧붙임(예: `승리 · 시간초과`, `패배 · 금수 33`)
+- `PlayerInfo.jsx`는 게임 중엔 "내 차례" 뱃지를, 종료 후엔 이 `result` 뱃지를 같은 자리에 표시. 랭킹전 레이팅 변화(`ratingDelta`)도 "내" 카드의 레이팅 숫자 옆에 인라인으로 붙음(`+15`/`-12`)
+- 하단 액션 버튼도 게임 중엔 "항복", 종료 후엔 "재경기 요청"/"다시하기"로 같은 자리에서 바뀜(`status`에 따라 분기, 모달의 별도 버튼 영역 없이 기존 액션 줄 재사용)
 
 ---
 
@@ -366,7 +375,7 @@ getAIMove(board, aiPlayer)
 
 ### 결과 반영
 
-게임 종료 시(`applyRankedRating`) `type: 'ranked'` 방이면 승/패/무 결과를 ELO에 반영하고, 양쪽 소켓에 `rating:update`(변화량 + 신규 레이팅) emit. `Game.jsx`가 이를 받아 종료 모달에 레이팅 변화(예: `+32 → 1232`)를 표시한다.
+게임 종료 시(`applyRankedRating`) `type: 'ranked'` 방이면 승/패/무 결과를 ELO에 반영하고, 양쪽 소켓에 `rating:update`(변화량 + 신규 레이팅) emit. `Game.jsx`가 이를 받아 "내" `PlayerInfo` 카드의 레이팅 숫자 옆에 변화량(예: `1200 +32`)을 인라인으로 표시한다.
 
 ### 순위표
 

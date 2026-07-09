@@ -5,12 +5,13 @@ const BOARD_SIZE = 15
 const CELL_SIZE = 40
 
 // forbiddenCells: [{ row, col, type }]
-export default function Board({ board, onMove, lastMove, disabled, myColor, forbiddenCells = [] }) {
+// winLine: [{ row, col }] — 승리로 이어진 연속된 돌들의 좌표(있으면 하이라이트)
+export default function Board({ board, onMove, lastMove, disabled, myColor, forbiddenCells = [], winLine = [] }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
     drawBoard()
-  }, [board, lastMove, forbiddenCells])
+  }, [board, lastMove, forbiddenCells, winLine])
 
   function drawBoard() {
     const canvas = canvasRef.current
@@ -71,6 +72,30 @@ export default function Board({ board, onMove, lastMove, disabled, myColor, forb
       const cx = padding + col * CELL_SIZE
       const cy = padding + row * CELL_SIZE
       ctx.strokeRect(cx - 6, cy - 6, 12, 12)
+    }
+
+    // 승리한 5목 라인 표시 — 이어진 돌을 잇는 굵은 선 + 각 돌 주위 골드 링
+    if (winLine.length >= 2) {
+      const first = winLine[0]
+      const last = winLine[winLine.length - 1]
+
+      ctx.strokeStyle = 'rgba(212, 160, 23, 0.9)'
+      ctx.lineWidth = 6
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(padding + first.col * CELL_SIZE, padding + first.row * CELL_SIZE)
+      ctx.lineTo(padding + last.col * CELL_SIZE, padding + last.row * CELL_SIZE)
+      ctx.stroke()
+
+      for (const { row, col } of winLine) {
+        const cx = padding + col * CELL_SIZE
+        const cy = padding + row * CELL_SIZE
+        ctx.strokeStyle = '#d4a017'
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.arc(cx, cy, CELL_SIZE * 0.44 + 4, 0, Math.PI * 2)
+        ctx.stroke()
+      }
     }
 
     // 금수 위치 표시 (렌주 삼각형 기호)

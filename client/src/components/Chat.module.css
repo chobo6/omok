@@ -6,6 +6,7 @@
   border: 1px solid var(--line);
   height: 300px;
   width: 100%;
+  overflow: hidden;
 }
 
 .header {
@@ -67,6 +68,10 @@
   color: var(--ink-faint);
 }
 
+.input:focus-visible {
+  outline: none;
+}
+
 .sendBtn {
   background: transparent;
   color: var(--ink-soft);
@@ -75,6 +80,8 @@
   border-radius: 0 0 4px 0;
   border-left: 1px solid var(--line);
   transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .sendBtn:hover {

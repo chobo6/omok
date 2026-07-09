@@ -355,8 +355,9 @@ io.on('connection', (socket) => {
     room.board[row][col] = playerNumber
     room.lastMove = { row, col, player: playerNumber }
 
-    if (checkWin(room.board, row, col, playerNumber)) {
-      endGame(roomId, { winner: playerNumber, winnerId: socket.id, reason: 'win', winMove: { row, col } })
+    const winLine = checkWin(room.board, row, col, playerNumber)
+    if (winLine) {
+      endGame(roomId, { winner: playerNumber, winnerId: socket.id, reason: 'win', winMove: { row, col }, winLine })
       return
     }
     if (isBoardFull(room.board)) {

@@ -98,67 +98,14 @@
   color: var(--ink);
 }
 
-/* 게임 종료 모달 */
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(27, 27, 24, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  backdrop-filter: blur(4px);
-}
-
-.modal {
-  background: var(--paper-soft);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 40px;
-  text-align: center;
-  min-width: 300px;
-  box-shadow: 0 20px 60px rgba(27, 27, 24, 0.18);
-}
-
-.modalTitle {
-  font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--ink);
-  margin-bottom: 12px;
-}
-
-.modalResult {
-  font-size: 18px;
-  color: var(--ink);
-  margin-bottom: 24px;
-}
-
 .rematchInfo {
   font-size: 13px;
   color: var(--celadon);
-  margin-bottom: 16px;
   padding: 8px;
   background: rgba(95, 135, 112, 0.1);
   border-radius: 4px;
-}
-
-.ratingDelta {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 15px;
-  color: var(--ink-soft);
-  margin-bottom: 4px;
-}
-.ratingUp   { color: var(--celadon); font-weight: 700; }
-.ratingDown { color: var(--seal); font-weight: 700; }
-
-.modalActions {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
+  width: 100%;
+  text-align: center;
 }
 
 .rematchBtn {

@@ -72,11 +72,17 @@ REST: `GET /api/rooms` (공개방 목록 폴링), `GET /api/leaderboard` (랭킹
 - 서버 재시작 시 모든 방 초기화 (in-memory)
 - **금수 룰**: 렌주룰 적용. 흑의 33/44/장목 착수 시 즉시 패배. 거짓금수(삼·사 완성 자리가 그 자체로 금수면 진짜로 인정 안 함) 허용 — `evaluating` Set으로 순환만 방지하고 깊이 제한 없이 재귀 검증
 - 금수 판정 로직은 서버(`server/forbidden.js` CJS)와 클라이언트(`client/src/utils/forbidden.js` ESM) 양쪽에 동일 로직으로 존재. 수정 시 둘 다 반영해야 함
+- 5목 승리 판정(`checkWin`)도 서버(`server/gameLogic.js`)와 클라이언트(`client/src/pages/Game.jsx` 내부, AI 모드 로컬 판정용) 양쪽에 동일 로직으로 존재. 승리 시 완성된 연속 돌 좌표 배열(`winLine`)을 반환하며, 수정 시 둘 다 반영해야 함
+- 게임 종료 결과는 모달이 아니라 상단 `PlayerInfo` 카드에 인라인으로 표시(승/패/무 배지, 레이팅 변화, 승리 5목 하이라이트는 `Board.jsx`). 하단 액션 버튼도 종료 시 항복→재경기 요청으로 같은 자리에서 전환됨(2026-07-09)
 - AI는 클라이언트에서 실행 (서버 AI 없음). **AI 대전 시 로비에서 사람이 흑/백을 선택**(`Lobby.jsx`, `humanColor` config) — 백은 금수 제한 없음, 흑은(사람이든 AI든) 금수 적용. AI가 흑일 땐 `aiEngine.js`가 자기 금수(33/44/장목)를 회피하도록 루트 후보를 필터링 + `Game.jsx`에 이중 안전망(혹시 회피 실패 시 즉시 패배 처리)
 - AI 연산(`getAIMove`)은 `Game.jsx`가 직접 호출하지 않고 `aiWorker.js`(Web Worker)에 위임됨. `postMessage`로 board 전달 → worker가 계산 → 결과만 반환
 - `Game.jsx`에서 소켓 이벤트 핸들러는 stale closure 방지를 위해 `useRef` 패턴 사용
 - **관전 모드**: 공개방은 게임 시작 후(`status: 'playing'`)에도 `/api/rooms` 목록에 남아 "관전" 버튼으로 입장 가능(`room:spectate`). 관전자는 `room.players`에 들어가지 않고 `socket.join`만 하므로 브로드캐스트는 받지만 착수/채팅은 서버가 조용히 무시함 — `Game.jsx`의 `isSpectator`가 보드 클릭·항복·재경기·채팅 입력을 클라이언트 쪽에서도 막음
 - 인증은 httpOnly 쿠키 기반 세션(Google 로그인)이며, 게스트는 공개방 생성/입장과 AI 대전만 가능하고 랭킹전은 로그인 필수
+
+## UI 변경 검증
+
+클라이언트에 테스트 프레임워크 없음 — UI 확인은 실제 브라우저로. `chromium-cli` 미설치 환경(이 머신)에서는 `playwright-core`(스크래치패드에 `npm install playwright-core`)로 로컬 설치된 Chrome(`executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe"`)을 구동하면 브라우저 다운로드 없이 headless 검증 가능
 
 ## 참고 문서
 

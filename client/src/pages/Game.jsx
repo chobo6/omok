@@ -219,9 +219,10 @@ export default function Game({ config, onLeave }) {
     setBoard(b.map(r => [...r]))
     setLastMove({ row, col, player })
 
-    if (checkWin(b, row, col, player)) {
+    const winLine = checkWin(b, row, col, player)
+    if (winLine) {
       clearInterval(timerRef.current)
-      setGameOver({ winner: player, reason: 'win', winMove: { row, col } })
+      setGameOver({ winner: player, reason: 'win', winMove: { row, col }, winLine })
       setStatus('ended')
       setTimers(prev => ({ ...prev, [player]: prev[player] }))
       return
@@ -242,20 +243,20 @@ export default function Game({ config, onLeave }) {
   function checkWin(board, row, col, player) {
     const dirs = [[0,1],[1,0],[1,1],[1,-1]]
     for (const [dr, dc] of dirs) {
-      let count = 1
+      const line = [{ row, col }]
       for (let d = 1; d <= 4; d++) {
         const r = row+dr*d, c = col+dc*d
         if (r<0||r>=BOARD_SIZE||c<0||c>=BOARD_SIZE||board[r][c]!==player) break
-        count++
+        line.push({ row: r, col: c })
       }
       for (let d = 1; d <= 4; d++) {
         const r = row-dr*d, c = col-dc*d
         if (r<0||r>=BOARD_SIZE||c<0||c>=BOARD_SIZE||board[r][c]!==player) break
-        count++
+        line.unshift({ row: r, col: c })
       }
-      if (count >= 5) return true
+      if (line.length >= 5) return line
     }
-    return false
+    return null
   }
 
   function onBoardClick(row, col) {
@@ -349,21 +350,41 @@ export default function Game({ config, onLeave }) {
     ? players.map(p => ({ ...p, timeLeft: timers[p.color === 'black' ? 1 : 2] ?? p.timeLeft }))
     : aiPlayers
 
+  // 게임 종료 사유 라벨(승/패 뱃지 옆에 짧게 덧붙임) — 순수 승리(reason:'win')는 별도 표기 없음
+  const REASON_LABEL = { timeout: '시간초과', surrender: '항복', disconnect: '상대 퇴장' }
+
+  // playerNum(1=흑,2=백) 기준으로 이 플레이어 카드에 표시할 승/패/무 뱃지 계산
+  function getResult(playerNum) {
+    if (!gameOver) return null
+    if (gameOver.winner === 0) return { text: '무승부', variant: 'draw' }
+    const isWinner = gameOver.winner === playerNum
+    const reason = gameOver.reason === 'forbidden'
+      ? `금수 ${gameOver.forbiddenType}`
+      : REASON_LABEL[gameOver.reason]
+    return { text: isWinner ? '승리' : '패배', variant: isWinner ? 'win' : 'lose', reason }
+  }
+
   return (
     <div className={styles.container}>
       <div className={styles.layout}>
         {/* 좌측: 플레이어 정보 + 보드 */}
         <div className={styles.leftPanel}>
           <div className={styles.playerRow}>
-            {displayPlayers.map((p, i) => (
-              <PlayerInfo
-                key={p.id}
-                player={p}
-                isMyTurn={currentTurn === (p.color === 'black' ? 1 : 2)}
-                timeLeft={p.timeLeft}
-                showRating={roomType === 'ranked'}
-              />
-            ))}
+            {displayPlayers.map((p) => {
+              const playerNum = p.color === 'black' ? 1 : 2
+              const isMe = isOnline ? myColor === p.color : playerNum === humanPlayer
+              return (
+                <PlayerInfo
+                  key={p.id}
+                  player={p}
+                  isMyTurn={currentTurn === playerNum}
+                  timeLeft={p.timeLeft}
+                  showRating={roomType === 'ranked'}
+                  result={getResult(playerNum)}
+                  ratingDelta={isMe ? ratingDelta?.delta : null}
+                />
+              )
+            })}
             {isOnline && status === 'waiting' && displayPlayers.length < 2 && (
               <div className={styles.waitingSlot}>
                 <div className={styles.waitingSpinner} />
@@ -379,14 +400,26 @@ export default function Game({ config, onLeave }) {
             disabled={boardDisabled}
             myColor={isOnline ? myColor : 'black'}
             forbiddenCells={forbiddenCells}
+            winLine={gameOver?.winLine || []}
           />
 
           <div className={styles.actions}>
-            {status === 'playing' && isOnline && !isSpectator && (
-              <button className={styles.surrenderBtn} onClick={handleSurrender}>항복</button>
+            {!isSpectator && (
+              status === 'playing' ? (
+                isOnline && <button className={styles.surrenderBtn} onClick={handleSurrender}>항복</button>
+              ) : (
+                roomType !== 'ranked' && (
+                  <button className={styles.rematchBtn} onClick={handleRematch}>
+                    {isOnline ? '재경기 요청' : '다시하기'}
+                  </button>
+                )
+              )
             )}
             <button className={styles.leaveBtn} onClick={onLeave}>나가기</button>
           </div>
+          {status !== 'playing' && rematchRequested && (
+            <div className={styles.rematchInfo}>상대방이 재경기를 요청했습니다</div>
+          )}
         </div>
 
         {/* 우측: 채팅 */}
@@ -394,46 +427,6 @@ export default function Game({ config, onLeave }) {
           <Chat messages={messages} onSend={handleChatSend} disabled={isSpectator} />
         </div>
       </div>
-
-      {/* 게임 종료 모달 */}
-      {gameOver && (
-        <div className={styles.overlay}>
-          <div className={styles.modal}>
-            <div className={styles.modalTitle}>
-              {gameOver.reason === 'draw' ? '무승부!' :
-               gameOver.reason === 'disconnect' ? '상대방이 나갔습니다' :
-               gameOver.reason === 'timeout' ? '시간 초과!' :
-               gameOver.reason === 'surrender' ? '항복!' :
-               gameOver.reason === 'forbidden' ? `금수 (${gameOver.forbiddenType})` : '게임 종료!'}
-            </div>
-            <div className={styles.modalResult}>
-              {gameOver.winner === 0 ? '비겼습니다' :
-               isSpectator ? `${gameOver.winner === 1 ? '흑' : '백'} 승리`
-               : isOnline
-                 ? (gameOver.winnerId === socketRef.current?.id ? '승리했습니다! 🎉' : '패배했습니다')
-                 : (gameOver.winner === humanPlayer ? '승리했습니다! 🎉' : 'AI가 이겼습니다')}
-            </div>
-            {ratingDelta && (
-              <div className={styles.ratingDelta}>
-                <span>레이팅</span>
-                <span className={ratingDelta.delta >= 0 ? styles.ratingUp : styles.ratingDown}>
-                  {ratingDelta.delta >= 0 ? '+' : ''}{ratingDelta.delta}
-                </span>
-                <span>→ {ratingDelta.newRating}</span>
-              </div>
-            )}
-            {rematchRequested && <div className={styles.rematchInfo}>상대방이 재경기를 요청했습니다</div>}
-            <div className={styles.modalActions}>
-              {roomType !== 'ranked' && !isSpectator && (
-                <button className={styles.rematchBtn} onClick={handleRematch}>
-                  {isOnline ? '재경기 요청' : '다시하기'}
-                </button>
-              )}
-              <button className={styles.leaveBtn} onClick={onLeave}>나가기</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
