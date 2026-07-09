@@ -25,7 +25,7 @@ Express 서버 (Node.js)
 |---|---|---|
 | Vite + React | Next.js, CRA | 빠른 빌드, HMR. SSR 불필요 |
 | Socket.io | 네이티브 WebSocket | 자동 재연결, 방(Room) 추상화 내장 |
-| In-memory 상태 | Redis, DB | MVP 단계 — 배포 없이 바로 실행 가능 |
+| In-memory 상태 | Redis, DB | 방/보드 등 진행 중인 게임 상태는 MVP 단계라 여전히 메모리 보관. 단, 랭킹전 레이팅·기보는 PostgreSQL에 영구 저장(2026-07-09, `docs/DB_SCHEMA.md` 참고) |
 | Canvas | SVG, DOM | 보드 크기에 따른 성능, 자유로운 드로잉 |
 
 ---
@@ -38,9 +38,13 @@ omok/
 │   ├── index.js          # Express + Socket.io 서버 진입점, REST(/api/rooms, /api/leaderboard)
 │   ├── gameLogic.js      # 순수 게임 로직 (보드 생성, 5목 판정)
 │   ├── forbidden.js      # 렌주룰 금수 판정 (CJS)
-│   ├── ratings.js        # ELO 레이팅 계산/저장
-│   └── data/
-│       └── ratings.json  # ELO 레이팅 영구 저장 파일 (런타임 생성, gitignore 처리)
+│   ├── ratings.js        # ELO 레이팅 계산/저장 (PostgreSQL, users 테이블)
+│   ├── games.js          # 랭킹전 기보(대국 기록) 저장 (PostgreSQL, games 테이블)
+│   ├── googleAuth.js     # Google 로그인 검증, 세션 JWT, users 테이블 upsert
+│   └── db/
+│       ├── pool.js       # pg Pool (DATABASE_URL)
+│       ├── schema.sql    # 스키마 원본 DDL
+│       └── migrate.js    # 스키마 적용 스크립트 (`npm run migrate`)
 │
 ├── client/
 │   ├── vite.config.js    # Vite 설정 + /socket.io, /api 프록시
@@ -346,16 +350,17 @@ getAIMove(board, aiPlayer)
 
 ---
 
-## 7. 랭킹전 / ELO 레이팅
+## 7. 랭킹전 / ELO 레이팅 / 기보
 
 ### 위치
-`server/ratings.js`
+`server/ratings.js`(레이팅), `server/games.js`(기보), `server/db/`(PostgreSQL 연결·스키마). 스키마 설계는 `docs/DB_SCHEMA.md`(ERD) 참고.
 
-### 개요
+### 개요 (2026-07-09부터 PostgreSQL, 이전엔 `server/data/ratings.json` 파일 기반)
 
-- 시작 레이팅 1200, K=32 표준 ELO 공식(`calcElo`)으로 승/패/무 판정 후 자동 갱신
-- `server/data/ratings.json`에 `{ [userId]: { rating, wins, losses, draws, nickname } }` 형태로 저장. 서버 프로세스 재시작에도 유지되지만 로컬 디스크 파일이라 배포 환경 이전 시 정식 DB로 전환 필요 (gitignore 처리되어 저장소에는 포함되지 않음 — 개발 환경마다 독립된 로컬 데이터)
-- `userId`: 클라이언트가 `localStorage`에 저장한 UUID(`client/src/utils/userId.js`)를 소켓 연결 시 `auth`로 전달, 서버가 이를 레이팅 조회/갱신 키로 사용 — 계정/로그인 없는 익명 식별이라 브라우저·기기를 바꾸면 전적이 이어지지 않음
+- 시작 레이팅 1200, K=32 표준 ELO 공식(`calcElo`)으로 승/패/무 판정 후 자동 갱신. `applyResult`가 두 유저 행을 `FOR UPDATE`로 잠그고 트랜잭션 안에서 갱신 — 동시에 여러 랭킹전이 끝나도 레이팅 계산이 서로 덮어쓰지 않음
+- `users` 테이블에 레이팅과 함께 저장(`google_sub`/`email`/`name`/`nickname`도 같은 테이블) — Google 계정 기준 식별이라 기기를 바꿔도 전적이 이어짐(게스트는 애초에 랭킹전 이용 불가)
+- `getProfile(userId)`은 `users` 행이 로그인 시점(`googleAuth.js`의 `getOrCreateUserId`)에 이미 만들어져 있다고 가정하고 조회/닉네임 갱신만 함 — 별도 존재 확인·생성 로직 없음
+- **기보**: 랭킹전 대국만 저장(공개방·AI 대전은 저장 안 함). 서버가 `room.moves`에 착수를 순서대로 쌓아뒀다가, 게임 종료 시(`applyRankedRating`) `games` 테이블에 통째로 INSERT — `winner`/`reason`/`forbiddenType`은 `game:over` payload와 동일한 값 그대로 저장
 
 ### 매칭 흐름
 
@@ -396,8 +401,7 @@ getAIMove(board, aiPlayer)
 
 ## 9. 알려진 제약사항
 
-- **서버 재시작 시 게임 초기화**: 방/게임 상태를 메모리에만 보관하므로 서버 재시작 시 모든 방이 사라짐 (ELO 레이팅은 예외 — 7절 참고)
-- **레이팅 파일 저장소는 임시방편**: `server/data/ratings.json` 단일 파일 읽기/쓰기 방식이라 동시 쓰기 경합이나 멀티 서버 확장을 고려하지 않음. 정식 서비스 전환 시 DB 필요
-- **익명 식별 한계**: `userId`가 `localStorage` UUID라 브라우저 데이터 삭제나 기기 변경 시 레이팅 전적이 끊김 (계정 시스템 없음)
+- **서버 재시작 시 게임 초기화**: 방/게임 상태를 메모리에만 보관하므로 서버 재시작 시 진행 중이던 방이 모두 사라짐 (레이팅·기보는 PostgreSQL에 영구 저장되므로 예외 — 7절 참고)
+- **기보는 랭킹전만**: 공개방·AI 대전은 여전히 기록되지 않음 (`docs/DB_SCHEMA.md` 6절 "이후 과제")
 - **단일 서버**: 수평 확장 시 Socket.io 세션 공유를 위해 Redis adapter 필요
 - **AI 성능**: depth-3 Minimax는 매 착수마다 최대 20개 후보 × 3수 = 클라이언트 CPU 사용. Web Worker에서 실행되어 페이지 자체가 멈추진 않지만, 저사양 기기에서는 착수까지 체감 지연이 있을 수 있음 (한계 및 개선 방향은 5절 참고)

@@ -28,8 +28,11 @@ npm run dev
 | `server/index.js` | Socket.io 이벤트 전체 처리, 방/타이머/채팅 관리 |
 | `server/gameLogic.js` | 보드 생성, 5목 판정 (순수 함수) |
 | `server/forbidden.js` | 렌주룰 금수 판정 CJS — 서버에서 사용 |
-| `server/ratings.js` | ELO 레이팅 계산·저장 (`server/data/ratings.json` 파일 기반, gitignore 처리됨) |
-| `server/googleAuth.js` | Google ID 토큰 검증, googleSub→userId 발급/조회(`server/data/users.json`), JWT 세션 서명/검증 |
+| `server/ratings.js` | ELO 레이팅 계산·저장 (PostgreSQL `users` 테이블) |
+| `server/games.js` | 랭킹전 기보(대국 기록) 저장 (PostgreSQL `games` 테이블) |
+| `server/googleAuth.js` | Google ID 토큰 검증, googleSub 기준 `users` upsert, JWT 세션 서명/검증 |
+| `server/db/pool.js` | pg Pool (`DATABASE_URL`) |
+| `server/db/schema.sql` | DB 스키마 원본 — `npm run migrate --prefix server`로 적용 |
 | `client/src/pages/Game.jsx` | 게임 화면 핵심 로직 (온라인/AI 모드 통합) |
 | `client/src/pages/Lobby.jsx` | 방 생성/AI 선택/공개방 목록/랭킹전 큐 2탭 화면 |
 | `client/src/pages/Leaderboard.jsx` | 랭킹전 순위표 페이지 (상위 20명) |
@@ -54,8 +57,8 @@ npm run dev
 
 - 보드: `number[][]` (15×15). `0`=빈칸, `1`=흑, `2`=백
 - 플레이어 번호: 방 생성자=1(흑), 입장자=2(백)
-- 방/게임 상태는 메모리(`Map`)에만 저장 — DB 없음, 서버 재시작 시 초기화
-- ELO 레이팅만 예외적으로 `server/data/ratings.json` 파일에 영구 저장 (DB 아님, 로컬 디스크 파일 — gitignore 처리되어 머신마다 독립적)
+- 방/게임 상태(진행 중인 대국)는 메모리(`Map`)에만 저장 — 서버 재시작 시 초기화
+- 랭킹전 레이팅·기보는 PostgreSQL에 영구 저장(2026-07-09부터, `docs/DB_SCHEMA.md` 참고). 로컬은 `docker compose up -d db` + `npm run migrate --prefix server`
 
 ## Socket.io 이벤트 요약
 
@@ -79,6 +82,9 @@ REST: `GET /api/rooms` (공개방 목록 폴링), `GET /api/leaderboard` (랭킹
 - `Game.jsx`에서 소켓 이벤트 핸들러는 stale closure 방지를 위해 `useRef` 패턴 사용
 - **관전 모드**: 공개방은 게임 시작 후(`status: 'playing'`)에도 `/api/rooms` 목록에 남아 "관전" 버튼으로 입장 가능(`room:spectate`). 관전자는 `room.players`에 들어가지 않고 `socket.join`만 하므로 브로드캐스트는 받지만 착수/채팅은 서버가 조용히 무시함 — `Game.jsx`의 `isSpectator`가 보드 클릭·항복·재경기·채팅 입력을 클라이언트 쪽에서도 막음
 - 인증은 httpOnly 쿠키 기반 세션(Google 로그인)이며, 게스트는 공개방 생성/입장과 AI 대전만 가능하고 랭킹전은 로그인 필수
+- **DB는 랭킹전에만 관여**: 공개방·AI 대전은 여전히 메모리 전용이라 DB가 꺼져 있어도 정상 동작함. 랭킹전 대기열 참가(`ranked:queue:join`)부터는 DB 조회가 필요해 DB 다운 시 실패함
+- Socket.io 핸들러에서 DB 호출(`await`)이 낀 경우, await 이전에 먼저 확인한 상태(방 정원 등 공유 상태 체크)를 await 이후에 그대로 믿고 mutate하면 동시 요청 경합이 생길 수 있음 — `room:join`이 이 문제로 한 번 수정됨(정원 체크+자리 선점을 DB 조회보다 먼저 동기로 끝내도록). 비슷한 패턴 추가 시 주의
+- `room.moves`(착수 순서 배열)는 모든 방 타입에 대해 채워지지만, 실제 DB(`games` 테이블)에 저장되는 건 랭킹전(`room.type === 'ranked'`)뿐 — `server/index.js`의 `applyRankedRating`
 
 ## UI 변경 검증
 
@@ -87,5 +93,6 @@ REST: `GET /api/rooms` (공개방 목록 폴링), `GET /api/leaderboard` (랭킹
 ## 참고 문서
 
 - `docs/PRD.md` — 기능 요구사항 전체
+- `docs/DB_SCHEMA.md` — 랭킹전 레이팅·기보 저장 DB 스키마(ERD)
 - `docs/TECHNICAL_SPEC.md` — 아키텍처, API 명세, AI 설명
 - `docs/TROUBLESHOOTING.md` — 금수 패배처리·타이머 등 주요 버그 해결 기록

@@ -1,50 +1,21 @@
-const crypto = require('crypto')
-const fs = require('fs')
-const path = require('path')
 const jwt = require('jsonwebtoken')
 const { OAuth2Client } = require('google-auth-library')
+const pool = require('./db/pool')
 
-const DATA_DIR = path.join(__dirname, 'data')
-const USERS_FILE = path.join(DATA_DIR, 'users.json')
-
-// 순수 함수: db 객체를 직접 받아 googleSub → userId를 조회/생성한다.
-// 파일 I/O와 분리해둬서 유닛 테스트에서 실제 users.json 없이 검증할 수 있다.
-function resolveUserId(db, googleSub, { email, name } = {}) {
-  if (!db[googleSub]) {
-    db[googleSub] = { userId: `u_${crypto.randomUUID()}`, email, name, createdAt: Date.now() }
-  } else {
-    if (email) db[googleSub].email = email
-    if (name) db[googleSub].name = name
-  }
-  return db[googleSub].userId
-}
-
-let usersDb = {}
-try {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
-  if (fs.existsSync(USERS_FILE)) usersDb = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'))
-} catch { usersDb = {} }
-
-function saveUsers() {
-  try { fs.writeFileSync(USERS_FILE, JSON.stringify(usersDb, null, 2)) } catch {}
-}
-
-function getOrCreateUserId(googleSub, profile) {
-  const userId = resolveUserId(usersDb, googleSub, profile)
-  saveUsers()
-  return userId
-}
-
-// 순수 함수: db 객체에서 userId로 googleSub→userId 매핑을 역탐색해 저장된 이름을 조회한다.
-// ratings.json은 랭킹전 완료 시에만 저장되므로(server/ratings.js applyResult),
-// 로그인은 했지만 아직 첫 게임을 안 한 사용자의 닉네임은 여기서 가져와야 최신값이 보장된다.
-function resolveStoredName(db, userId) {
-  const entry = Object.values(db).find(u => u.userId === userId)
-  return entry?.name
-}
-
-function getStoredName(userId) {
-  return resolveStoredName(usersDb, userId)
+// googleSub 기준 upsert — UNIQUE(google_sub) + ON CONFLICT로 존재 확인/생성/갱신을 원자적으로 처리.
+// 처음 로그인한 사용자는 이 시점에 users 행이 생성되므로(닉네임은 테이블 기본값 '플레이어'),
+// 이후 getProfile(server/ratings.js)은 행이 항상 존재한다고 가정해도 된다.
+async function getOrCreateUserId(googleSub, { email, name } = {}) {
+  const { rows } = await pool.query(
+    `INSERT INTO users (google_sub, email, name)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (google_sub) DO UPDATE
+       SET email = COALESCE(EXCLUDED.email, users.email),
+           name = COALESCE(EXCLUDED.name, users.name)
+     RETURNING id`,
+    [googleSub, email, name]
+  )
+  return rows[0].id
 }
 
 function signSession(userId) {
@@ -79,4 +50,4 @@ async function verifyGoogleIdToken(credential) {
   return { sub: payload.sub, email: payload.email, name: payload.name }
 }
 
-module.exports = { resolveUserId, getOrCreateUserId, resolveStoredName, getStoredName, signSession, verifySession, verifyGoogleIdToken }
+module.exports = { getOrCreateUserId, signSession, verifySession, verifyGoogleIdToken }

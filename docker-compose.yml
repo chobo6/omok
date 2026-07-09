@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: omok
+      POSTGRES_PASSWORD: omok
+      POSTGRES_DB: omok
+    ports:
+      - '5432:5432'
+    volumes:
+      - omok_db_data:/var/lib/postgresql/data
+
+volumes:
+  omok_db_data:

@@ -25,6 +25,7 @@
 ### 요구사항
 
 - Node.js 18 이상
+- Docker (랭킹전 레이팅·기보 저장용 로컬 PostgreSQL — 공개방 대전·AI 대전만 쓸 거면 없어도 됨)
 
 ### 설치 및 실행
 
@@ -33,10 +34,14 @@
 ```bash
 npm install          # 루트 (concurrently)
 npm run install:all  # server, client 의존성 설치
+
+docker compose up -d db   # 로컬 Postgres (최초 1회, 랭킹전 쓸 경우)
+npm run migrate --prefix server  # 스키마 적용 (최초 1회)
+
 npm run dev          # 서버 + 클라이언트 동시 실행 (Ctrl+C로 둘 다 종료)
 ```
 
-브라우저에서 `http://localhost:3000` 접속
+브라우저에서 `http://localhost:3000` 접속. DB 설계는 [DB 스키마 문서](docs/DB_SCHEMA.md) 참고.
 
 ### 온라인 대전하기
 
@@ -50,18 +55,24 @@ npm run dev          # 서버 + 클라이언트 동시 실행 (Ctrl+C로 둘 다
 omok/
 ├── server/
 │   ├── index.js         # 서버 진입점 (Socket.io 이벤트)
-│   └── gameLogic.js     # 보드 생성, 5목 판정
+│   ├── gameLogic.js     # 보드 생성, 5목 판정
+│   ├── ratings.js       # ELO 레이팅 (PostgreSQL)
+│   ├── games.js         # 랭킹전 기보 저장 (PostgreSQL)
+│   └── db/              # pg Pool, 스키마, 마이그레이션 스크립트
 ├── client/
 │   └── src/
 │       ├── pages/       # Lobby, Game 화면
 │       ├── components/  # Board, Chat, PlayerInfo
 │       └── utils/       # AI 엔진(aiEngine.js) + Web Worker(aiWorker.js)
+├── docker-compose.yml   # 로컬 개발용 PostgreSQL
 └── docs/
     ├── PRD.md           # 제품 요구사항 문서
-    └── TECHNICAL_SPEC.md # 기술 설계서
+    ├── TECHNICAL_SPEC.md # 기술 설계서
+    └── DB_SCHEMA.md     # DB 스키마(ERD)
 ```
 
 ## 문서
 
 - [PRD (제품 요구사항)](docs/PRD.md)
 - [기술 설계서](docs/TECHNICAL_SPEC.md)
+- [DB 스키마](docs/DB_SCHEMA.md)

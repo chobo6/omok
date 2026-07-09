@@ -7,7 +7,8 @@ const cookieParser = require('cookie-parser')
 const { createBoard, checkWin, isBoardFull } = require('./gameLogic')
 const { checkForbidden } = require('./forbidden')
 const { getProfile, applyResult, getLeaderboard } = require('./ratings')
-const { getOrCreateUserId, getStoredName, signSession, verifySession, verifyGoogleIdToken } = require('./googleAuth')
+const { getOrCreateUserId, signSession, verifySession, verifyGoogleIdToken } = require('./googleAuth')
+const { recordGame } = require('./games')
 
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:3000'
 const SESSION_COOKIE = 'omok_session'
@@ -48,8 +49,13 @@ app.get('/api/rooms', (req, res) => {
   res.json(list)
 })
 
-app.get('/api/leaderboard', (req, res) => {
-  res.json(getLeaderboard(20))
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    res.json(await getLeaderboard(20))
+  } catch (err) {
+    console.error('리더보드 조회 실패:', err)
+    res.status(500).json({ message: '리더보드를 불러오지 못했습니다.' })
+  }
 })
 
 app.post('/api/auth/google', async (req, res) => {
@@ -57,20 +63,25 @@ app.post('/api/auth/google', async (req, res) => {
     const { credential } = req.body
     if (!credential) return res.status(400).json({ message: 'credential이 필요합니다.' })
     const { sub, email, name } = await verifyGoogleIdToken(credential)
-    const userId = getOrCreateUserId(sub, { email, name })
+    const userId = await getOrCreateUserId(sub, { email, name })
     const token = signSession(userId)
     res.cookie(SESSION_COOKIE, token, COOKIE_OPTIONS)
-    res.json(getProfile(userId, name))
+    res.json(await getProfile(userId, name))
   } catch (err) {
     console.error('Google 로그인 실패:', err.message)
     res.status(401).json({ message: '로그인에 실패했습니다.' })
   }
 })
 
-app.get('/api/auth/me', (req, res) => {
+app.get('/api/auth/me', async (req, res) => {
   const userId = verifySession(req.cookies[SESSION_COOKIE])
   if (!userId) return res.json(null)
-  res.json(getProfile(userId, getStoredName(userId)))
+  try {
+    res.json(await getProfile(userId))
+  } catch (err) {
+    console.error('프로필 조회 실패:', err)
+    res.status(500).json({ message: '프로필을 불러오지 못했습니다.' })
+  }
 })
 
 app.post('/api/auth/logout', (req, res) => {
@@ -154,20 +165,40 @@ function endGame(roomId, gameOverPayload) {
   room.status = 'ended'
   emitRoomState(roomId)
   io.to(roomId).emit('game:over', gameOverPayload)
-  applyRankedRating(roomId, gameOverPayload.winner)
+  // 레이팅/기보 저장은 DB I/O라 await하지 않고 백그라운드로 흘려보냄 — game:over는 이미
+  // 위에서 즉시 브로드캐스트됐으니 클라이언트 응답성과는 무관, 실패해도 내부에서 로깅만 함
+  applyRankedRating(roomId, gameOverPayload)
 }
 
-function applyRankedRating(roomId, winnerNumber) {
+async function applyRankedRating(roomId, gameOverPayload) {
   const room = rooms.get(roomId)
   if (!room || room.type !== 'ranked' || room.players.length < 2) return
   const [p1, p2] = room.players
   const uid1 = room.userIds?.[p1]
   const uid2 = room.userIds?.[p2]
   if (!uid1 || !uid2) return
-  const score = winnerNumber === 1 ? 1 : winnerNumber === 2 ? 0 : 0.5
-  const result = applyResult(uid1, uid2, score)
-  io.to(p1).emit('rating:update', { delta: result.deltaA, newRating: result.ratingA })
-  io.to(p2).emit('rating:update', { delta: result.deltaB, newRating: result.ratingB })
+  const { winner, reason, forbiddenType } = gameOverPayload
+  const score = winner === 1 ? 1 : winner === 2 ? 0 : 0.5
+  try {
+    const result = await applyResult(uid1, uid2, score)
+    io.to(p1).emit('rating:update', { delta: result.deltaA, newRating: result.ratingA })
+    io.to(p2).emit('rating:update', { delta: result.deltaB, newRating: result.ratingB })
+    await recordGame({
+      blackUserId: uid1,
+      whiteUserId: uid2,
+      winner,
+      reason,
+      forbiddenType,
+      blackRatingBefore: room.initialRatings[p1],
+      whiteRatingBefore: room.initialRatings[p2],
+      blackRatingDelta: result.deltaA,
+      whiteRatingDelta: result.deltaB,
+      moves: room.moves || [],
+      startedAt: room.startedAt || new Date(),
+    })
+  } catch (err) {
+    console.error('[applyRankedRating] 레이팅/기보 저장 실패:', err)
+  }
 }
 
 // ─── 이벤트 핸들러 ────────────────────────────────────────────────────────────
@@ -188,9 +219,12 @@ io.on('connection', (socket) => {
   console.log('connected:', socket.id)
 
   // ── 방 만들기 (공개) ────────────────────────────────────────────────────
-  socket.on('room:create', ({ nickname, type = 'public' }) => {
+  socket.on('room:create', async ({ nickname, type = 'public' }) => {
     const roomId = generateRoomId()
-    const profile = userId ? getProfile(userId, nickname) : null
+    let profile = null
+    if (userId) {
+      try { profile = await getProfile(userId, nickname) } catch (err) { console.error('프로필 조회 실패:', err) }
+    }
     rooms.set(roomId, {
       board: createBoard(),
       players: [socket.id],
@@ -198,6 +232,7 @@ io.on('connection', (socket) => {
       currentTurn: 1,
       status: 'waiting',
       lastMove: null,
+      moves: [],
       chat: [],
       timers: { [socket.id]: 180 },
       timerInterval: null,
@@ -211,21 +246,28 @@ io.on('connection', (socket) => {
   })
 
   // ── 방 입장 (공개방 목록) ────────────────────────────────────────────────
-  socket.on('room:join', ({ roomId, nickname }) => {
+  socket.on('room:join', async ({ roomId, nickname }) => {
     const room = rooms.get(roomId)
     if (!room) { socket.emit('room:error', { message: '방을 찾을 수 없습니다.' }); return }
     if (room.players.length >= 2) { socket.emit('room:error', { message: '방이 가득 찼습니다.' }); return }
     if (room.status !== 'waiting') { socket.emit('room:error', { message: '이미 게임이 시작된 방입니다.' }); return }
 
-    const profile = userId ? getProfile(userId, nickname) : null
+    // 자리 선점(동기) — getProfile await 도중 다른 room:join이 끼어들어 같은 방에 3번째
+    // 플레이어가 들어오는 경합을 막기 위해, DB 조회 전에 먼저 players/status를 확정한다
     room.players.push(socket.id)
     room.nicknames[socket.id] = nickname || '플레이어2'
     room.timers[socket.id] = 180
     room.userIds ??= {}
     room.userIds[socket.id] = userId
     room.initialRatings ??= {}
-    room.initialRatings[socket.id] = profile?.rating ?? null
     room.status = 'playing'
+
+    let profile = null
+    if (userId) {
+      try { profile = await getProfile(userId, nickname) } catch (err) { console.error('프로필 조회 실패:', err) }
+    }
+    room.initialRatings[socket.id] = profile?.rating ?? null
+
     socket.join(roomId)
     io.to(roomId).emit('room:joined', { roomId })
     startTimer(roomId)
@@ -245,13 +287,21 @@ io.on('connection', (socket) => {
   })
 
   // ── 랭킹전 대기열 참가 ───────────────────────────────────────────────────
-  socket.on('ranked:queue:join', ({ nickname }) => {
+  socket.on('ranked:queue:join', async ({ nickname }) => {
     if (!userId) { socket.emit('room:error', { message: '로그인이 필요합니다.' }); return }
 
     const nick = nickname || '플레이어'
-    const profile = getProfile(userId, nick)
+    let profile
+    try {
+      profile = await getProfile(userId, nick)
+    } catch (err) {
+      console.error('프로필 조회 실패:', err)
+      socket.emit('room:error', { message: '잠시 후 다시 시도해주세요.' })
+      return
+    }
 
-    // 중복 제거
+    // 중복 제거 — getProfile await 이후부터는 끝까지 동기로 처리해 다른 ranked:queue:join과
+    // 경합 없이 큐 상태를 안전하게 읽고 쓴다
     const dup = rankedQueue.findIndex(q => q.userId === userId || q.socketId === socket.id)
     if (dup !== -1) rankedQueue.splice(dup, 1)
 
@@ -265,6 +315,7 @@ io.on('connection', (socket) => {
         currentTurn: 1,
         status: 'ranked_pending',
         lastMove: null,
+        moves: [],
         chat: [],
         timers: {},
         timerInterval: null,
@@ -317,15 +368,20 @@ io.on('connection', (socket) => {
     if (room.pendingUsers.length === 0) {
       // 양쪽 모두 참가 → 게임 시작
       room.status = 'playing'
+      room.startedAt = new Date()
       startTimer(roomId)
       emitRoomState(roomId)
     }
   })
 
   // ── 프로필 조회 ──────────────────────────────────────────────────────────
-  socket.on('profile:get', () => {
+  socket.on('profile:get', async () => {
     if (!userId) return
-    socket.emit('profile:data', getProfile(userId, getStoredName(userId)))
+    try {
+      socket.emit('profile:data', await getProfile(userId))
+    } catch (err) {
+      console.error('프로필 조회 실패:', err)
+    }
   })
 
   // ── 돌 놓기 ──────────────────────────────────────────────────────────────
@@ -344,6 +400,7 @@ io.on('connection', (socket) => {
       if (forbidden) {
         room.board[row][col] = 1
         room.lastMove = { row, col, player: 1 }
+        room.moves.push({ row, col, player: 1 })
         endGame(roomId, {
           winner: 2, winnerId: room.players[1],
           reason: 'forbidden', forbiddenType: forbidden, forbiddenMove: { row, col },
@@ -354,6 +411,7 @@ io.on('connection', (socket) => {
 
     room.board[row][col] = playerNumber
     room.lastMove = { row, col, player: playerNumber }
+    room.moves.push({ row, col, player: playerNumber })
 
     const winLine = checkWin(room.board, row, col, playerNumber)
     if (winLine) {
