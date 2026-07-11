@@ -268,9 +268,7 @@ io.on('connection', (socket) => {
     room.players.push(socket.id)
     room.nicknames[socket.id] = nickname || '플레이어2'
     room.timers[socket.id] = 180
-    room.userIds ??= {}
     room.userIds[socket.id] = userId
-    room.initialRatings ??= {}
     socket.join(roomId)
     room.status = 'playing'
 
@@ -321,15 +319,16 @@ io.on('connection', (socket) => {
 
     const nick = nickname || '플레이어'
     let profile
+    // 예약(queueingUserIds.add)은 성공/실패 어느 경로로 끝나든 반드시 해제해야 하므로 finally로 모은다
     try {
       profile = await getProfile(userId, nick)
     } catch (err) {
-      queueingUserIds.delete(userId)
       console.error('프로필 조회 실패:', err)
       socket.emit('room:error', { message: '잠시 후 다시 시도해주세요.' })
       return
+    } finally {
+      queueingUserIds.delete(userId)
     }
-    queueingUserIds.delete(userId)
 
     // 중복 제거 — getProfile await 이후부터는 끝까지 동기로 처리해 다른 ranked:queue:join과
     // 경합 없이 큐 상태를 안전하게 읽고 쓴다
