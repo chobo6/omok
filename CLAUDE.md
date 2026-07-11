@@ -44,6 +44,9 @@ npm run dev
 | `client/src/utils/forbidden.js` | 렌주룰 금수 판정 ESM — 클라이언트에서 사용 |
 | `client/src/utils/auth.js` | Google Identity Services 스크립트 로드/버튼 렌더링, `/api/auth/*` 호출(로그인/내 정보/로그아웃) |
 | `client/src/utils/guestNickname.js` | 게스트용 랜덤 닉네임 생성, sessionStorage로 탭 세션 동안만 유지 |
+| `Dockerfile` | 멀티스테이지 빌드 — client(Vite) 빌드 후 결과물을 server 이미지에 포함, server가 정적 파일까지 같은 오리진으로 서빙 |
+| `kind-config.yaml` | 로컬 쿠버네티스 실습용 kind 클러스터 설정(k8s 리소스 아님) — `docs/DEPLOY.md` 참고 |
+| `k8s/` | 쿠버네티스 매니페스트(네임스페이스, Postgres StatefulSet, server Deployment/Service, ConfigMap/Secret) |
 
 ## 코딩 컨벤션
 
@@ -72,7 +75,7 @@ REST: `GET /api/rooms` (공개방 목록 폴링), `GET /api/leaderboard` (랭킹
 
 ## 알려진 제약 / 주의사항
 
-- 서버 재시작 시 모든 방 초기화 (in-memory)
+- 서버 재시작 시 모든 방 초기화 (in-memory) — 같은 이유로 쿠버네티스 배포 시 server Deployment의 `replicas`는 반드시 1로 고정해야 함(`docs/DEPLOY.md` 참고)
 - **금수 룰**: 렌주룰 적용. 흑의 33/44/장목 착수 시 즉시 패배. 거짓금수(삼·사 완성 자리가 그 자체로 금수면 진짜로 인정 안 함) 허용 — `evaluating` Set으로 순환만 방지하고 깊이 제한 없이 재귀 검증
 - 금수 판정 로직은 서버(`server/forbidden.js` CJS)와 클라이언트(`client/src/utils/forbidden.js` ESM) 양쪽에 동일 로직으로 존재. 수정 시 둘 다 반영해야 함
 - 5목 승리 판정(`checkWin`)도 서버(`server/gameLogic.js`)와 클라이언트(`client/src/pages/Game.jsx` 내부, AI 모드 로컬 판정용) 양쪽에 동일 로직으로 존재. 승리 시 완성된 연속 돌 좌표 배열(`winLine`)을 반환하며, 수정 시 둘 다 반영해야 함
@@ -96,3 +99,4 @@ REST: `GET /api/rooms` (공개방 목록 폴링), `GET /api/leaderboard` (랭킹
 - `docs/DB_SCHEMA.md` — 랭킹전 레이팅·기보 저장 DB 스키마(ERD)
 - `docs/TECHNICAL_SPEC.md` — 아키텍처, API 명세, AI 설명
 - `docs/TROUBLESHOOTING.md` — 금수 패배처리·타이머 등 주요 버그 해결 기록
+- `docs/DEPLOY.md` — 로컬 쿠버네티스(kind) 배포 실습 기록, 재현 절차, 알려진 제약

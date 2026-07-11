@@ -1,4 +1,5 @@
 require('dotenv').config()
+const path = require('path')
 const express = require('express')
 const http = require('http')
 const { Server } = require('socket.io')
@@ -89,6 +90,16 @@ app.get('/api/auth/me', async (req, res) => {
 app.post('/api/auth/logout', (req, res) => {
   res.clearCookie(SESSION_COOKIE, COOKIE_OPTIONS)
   res.json({ ok: true })
+})
+
+// ─── 정적 파일(빌드된 client) ───────────────────────────────────────────────
+// Dockerfile이 client를 빌드해 이 서버 이미지의 public/ 아래로 복사해 넣는다.
+// /api, /socket.io로 시작하지 않는 나머지 GET 요청은 index.html로 돌려보내
+// React가 그 이후 라우팅(이 앱은 클라이언트 라우터 없이 내부 상태로만 화면 전환하므로
+// 사실상 '/'만 해당)을 처리하게 한다.
+app.use(express.static(path.join(__dirname, 'public')))
+app.get(/^(?!\/api|\/socket\.io).*/, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'))
 })
 
 // ─── Socket.io ───────────────────────────────────────────────────────────────
@@ -562,5 +573,5 @@ io.on('connection', (socket) => {
   })
 })
 
-const PORT = 4000
+const PORT = process.env.PORT || 4000
 server.listen(PORT, () => console.log(`오목 서버 실행 중: http://localhost:${PORT}`))

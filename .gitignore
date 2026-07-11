@@ -5,3 +5,5 @@ dist/
 *.log
 server/data/
 .superpowers/
+k8s/*-secret.yaml
+!k8s/*-secret.yaml.example

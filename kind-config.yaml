@@ -1,0 +1,8 @@
+# kind 클러스터 자체의 설정 (쿠버네티스 리소스 YAML이 아니라 kind 도구 전용 설정)
+# 지금은 port-forward로만 접속할 거라 노드 1개(컨트롤플레인 겸용)로 충분함.
+# 나중에 ingress-nginx를 붙이는 2단계에서 extraPortMappings를 추가할 예정.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: omok
+nodes:
+  - role: control-plane

@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: omok-postgres
+  namespace: omok
+spec:
+  serviceName: omok-postgres   # 위에서 만든 headless Service 이름과 일치해야 함
+  replicas: 1
+  selector:
+    matchLabels:
+      app: omok-postgres
+  template:
+    metadata:
+      labels:
+        app: omok-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          envFrom:
+            - secretRef:
+                name: omok-postgres-secret
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata   # 볼륨 루트를 바로 안 쓰고 하위 폴더를 씀(postgres 초기화 시 lost+found 등과 충돌 방지)
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: omok-server
+  namespace: omok
+spec:
+  replicas: 1   # 방/게임 상태가 서버 메모리에만 있어서 반드시 1개로 고정
+  selector:
+    matchLabels:
+      app: omok-server
+  template:
+    metadata:
+      labels:
+        app: omok-server
+    spec:
+      containers:
+        - name: omok-server
+          image: omok-server:local
+          imagePullPolicy: Never   # kind load docker-image로 넣은 이미지 — 레지스트리에서 받아오지 말라는 뜻
+          ports:
+            - containerPort: 4000
+          envFrom:
+            - configMapRef:
+                name: omok-server-config
+            - secretRef:
+                name: omok-server-secret
+          readinessProbe:
+            httpGet:
+              path: /api/rooms
+              port: 4000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/rooms
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
