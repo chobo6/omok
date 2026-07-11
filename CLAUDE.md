@@ -46,7 +46,7 @@ npm run dev
 | `client/src/utils/guestNickname.js` | 게스트용 랜덤 닉네임 생성, sessionStorage로 탭 세션 동안만 유지 |
 | `Dockerfile` | 멀티스테이지 빌드 — client(Vite) 빌드 후 결과물을 server 이미지에 포함, server가 정적 파일까지 같은 오리진으로 서빙 |
 | `kind-config.yaml` | 로컬 쿠버네티스 실습용 kind 클러스터 설정(k8s 리소스 아님) — `docs/DEPLOY.md` 참고 |
-| `k8s/` | 쿠버네티스 매니페스트(네임스페이스, Postgres StatefulSet, server Deployment/Service, ConfigMap/Secret) |
+| `k8s/` | 쿠버네티스 매니페스트(네임스페이스, Postgres StatefulSet, server Deployment/Service, ConfigMap/Secret, Ingress) — `kubectl port-forward` 대신 ingress-nginx를 통해 `http://localhost`로 접속 |
 
 ## 코딩 컨벤션
 
