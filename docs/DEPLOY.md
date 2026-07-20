@@ -102,6 +102,19 @@ kubectl wait --namespace ingress-nginx --for=condition=ready pod \
 # → 브라우저에서 http://localhost
 ```
 
+## 7-1. 클러스터 정리(cleanup)
+
+`docker stop omok-control-plane`만으로는 확실히 안 꺼진다 — Docker Desktop을 재시작하거나 컴퓨터를 재부팅하면 이전에 떠 있던 컨테이너가 도로 살아나는 경우가 있어서(재시작 정책은 `on-failure`라 이게 Docker의 자동 재시작은 아니고, Docker Desktop이 세션 상태를 복원하면서 같이 켜지는 것으로 보임), "껐다고 생각했는데 계속 돌고 있다"는 상황이 생길 수 있다. 확실히 정리하려면 클러스터 자체를 지운다:
+
+```bash
+kind get clusters          # 클러스터 이름 확인 (omok)
+kind delete cluster --name omok
+```
+
+컨테이너·네트워크·볼륨이 한 번에 다 정리된다. 다시 실습하려면 "7. 재현 절차"의 2번(`kind create cluster`)부터 다시 밟으면 됨.
+
+**기록**: 2026-07-20 낮에 실습용으로 클러스터를 띄운 뒤 정리를 안 하고 방치, 이후 "꺼놨는데 왜 계속 돌아가냐"는 걸 알아채서 `kind delete cluster --name omok`으로 정리함. `docker ps`에 `omok-control-plane`이 며칠씩 떠 있는 걸 발견하면 실습이 끝난 뒤 정리를 깜빡한 것 — 이 섹션의 명령으로 지우면 된다.
+
 ## 8. Secret 파일 취급 주의
 
 `k8s/10-postgres-secret.yaml`, `k8s/21-server-secret.yaml`은 **`.gitignore`에 등록되어 있어 저장소에 커밋되지 않는다**(`.example` 템플릿만 커밋됨) — 이 레포는 공개 저장소라, 로컬 kind 클러스터 전용이라도 실제 값이 든 Secret YAML을 커밋하면 git 히스토리에 영구히 남는다. `server/.env`가 `.env.example`과 분리돼 있는 것과 동일한 이유다. 나중에 EKS 단계에서도 이 패턴을 유지하고, 실서비스 시크릿은 `kubectl create secret` 커맨드나 AWS Secrets Manager 연동으로 대체하는 걸 권장.
