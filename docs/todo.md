@@ -321,7 +321,7 @@ VCT, 시간예산 2배, 패턴 평가함수, 탐색기반 방어, 위치평가, 
 우선순위는 `docs/PRD.md` 4절, `docs/TECHNICAL_SPEC.md` 5·9절과 동일한 판단 기준입니다.
 
 ### 데이터/인프라
-- [ ] `server/data/ratings.json` 단일 파일 저장 방식을 정식 DB(SQLite/Postgres 등)로 전환 — 동시 쓰기 경합, 배포 환경 이전 문제 해결
+- [x] `server/data/ratings.json` 단일 파일 저장 방식을 정식 DB로 전환 — PostgreSQL로 이관 완료(2026-07-09). `users`/`games` 테이블, `docs/DB_SCHEMA.md` 참고
 - [x] 계정/로그인 시스템 — Google 소셜 로그인 + httpOnly 쿠키 세션 구현 완료(2026-07-08). 설계 `docs/superpowers/specs/2026-07-08-google-oauth-auth-design.md`, 구현 플랜 `docs/superpowers/plans/2026-07-08-google-oauth-auth.md`(Task 1~9) 참고. 게스트는 공개방/AI 대전만 허용, 랭킹전은 로그인 필수로 전환. 실제 Google 계정으로 브라우저 로그인/로그아웃/세션 유지/게스트 랭킹전 차단을 직접 검증했고, userId 스푸핑 방지도 별도 재현 테스트로 확인(Task 4 코드 리뷰). 다만 매칭 상대 역할의 두 번째 Google 계정을 확보하지 못해 랭킹전 대기열 참가까지만 확인했고, 실제 매치 성사 후 ELO 레이팅 갱신·기기 변경 시 레이팅 유지는 이번 세션에서 별도 재검증하지 못함(잔여 검증 항목)
   - [ ] (범위 밖, 별도 과제) 카카오/네이버 등 추가 소셜 로그인 공급자
   - [ ] (범위 밖, 별도 과제) 로그인 사용자 닉네임 직접 편집 UI

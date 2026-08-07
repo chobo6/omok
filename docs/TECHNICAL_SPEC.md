@@ -59,10 +59,12 @@ omok/
 │       │   ├── Chat.jsx       # 채팅 UI
 │       │   └── PlayerInfo.jsx # 플레이어 정보 + 타이머 + 레이팅 배지 + 게임 종료 승/패/무 결과 배지
 │       └── utils/
-│           ├── aiEngine.js    # Minimax + VCF 위협 탐색 AI (클라이언트 사이드)
-│           ├── aiWorker.js    # aiEngine을 Web Worker에서 실행
-│           ├── forbidden.js   # 렌주룰 금수 판정 (ESM)
-│           └── userId.js      # localStorage 기반 익명 UUID 발급
+│           ├── aiEngine.js      # Negamax + Alpha-Beta + 반복심화 + TT + VCF + 오프닝북 AI (클라이언트 사이드)
+│           ├── aiWorker.js      # aiEngine을 Web Worker에서 실행
+│           ├── forbidden.js     # 렌주룰 금수 판정 (ESM)
+│           ├── openingBook.js   # Yixin 질의 기반 오프닝북 (228개 항목)
+│           ├── auth.js          # Google Identity Services 로그인/세션 API 호출
+│           └── guestNickname.js # 게스트용 랜덤 닉네임 생성
 │
 └── docs/
     ├── PRD.md
